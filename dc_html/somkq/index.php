@@ -354,31 +354,62 @@ function handle_upload_video_ajax($pdo, $config) {
 
         if (!empty($_FILES['video_file']['name'])) {
             $file = $_FILES['video_file'];
+
+            // 1. Error Code Check
+            if ($file['error'] !== UPLOAD_ERR_OK) {
+                $msg = 'Upload Error Code: ' . $file['error'];
+                if ($file['error'] == UPLOAD_ERR_INI_SIZE || $file['error'] == UPLOAD_ERR_FORM_SIZE) {
+                    $msg = 'File too large (exceeds server limit)';
+                }
+                echo json_encode(['status' => 'error', 'message' => $msg]);
+                exit;
+            }
+
+            // 2. Extension Check
             $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+            if (!in_array($ext, ['mp4', 'mov', 'avi'])) {
+                echo json_encode(['status' => 'error', 'message' => "Invalid file extension: .$ext"]);
+                exit;
+            }
 
-            if (in_array($ext, ['mp4', 'mov', 'avi'])) {
-                $safe_staff = md5($staff);
-                $save_name = sprintf("%s_%s_%s_%s_%s.%s",
-                    $date, $staff, $shift, $timing, substr(uniqid(), -5), $ext
-                );
-                $target = $config['path_video_upload'] . '/' . $save_name;
+            $safe_staff = md5($staff);
+            $save_name = sprintf("%s_%s_%s_%s_%s.%s",
+                $date, $staff, $shift, $timing, substr(uniqid(), -5), $ext
+            );
+            $target_dir = $config['path_video_upload'];
+            $target = $target_dir . '/' . $save_name;
 
-                if (move_uploaded_file($file['tmp_name'], $target)) {
-                    $stmt = $pdo->prepare("INSERT INTO somkq_shift_videos (record_id, timing_type, file_name, original_name, file_size) VALUES (?, ?, ?, ?, ?)");
-                    $stmt->execute([$record_id, $timing, $save_name, $file['name'], $file['size']]);
-
-                    echo json_encode([
-                        'status' => 'success',
-                        'file_url' => $config['url_video'] . '/' . $save_name,
-                        'record_id' => $record_id // 返回记录ID，以便前端更新隐藏域
-                    ]);
+            // 3. Directory Check (Defensive)
+            if (!is_dir($target_dir)) {
+                if (!mkdir($target_dir, 0777, true)) {
+                    echo json_encode(['status' => 'error', 'message' => 'Failed to create upload directory']);
                     exit;
                 }
             }
+            if (!is_writable($target_dir)) {
+                echo json_encode(['status' => 'error', 'message' => 'Upload directory not writable']);
+                exit;
+            }
+
+            // 4. Move File
+            if (move_uploaded_file($file['tmp_name'], $target)) {
+                $stmt = $pdo->prepare("INSERT INTO somkq_shift_videos (record_id, timing_type, file_name, original_name, file_size) VALUES (?, ?, ?, ?, ?)");
+                $stmt->execute([$record_id, $timing, $save_name, $file['name'], $file['size']]);
+
+                echo json_encode([
+                    'status' => 'success',
+                    'file_url' => $config['url_video'] . '/' . $save_name,
+                    'record_id' => $record_id
+                ]);
+                exit;
+            } else {
+                echo json_encode(['status' => 'error', 'message' => 'move_uploaded_file failed']);
+                exit;
+            }
         }
-        echo json_encode(['status' => 'error', 'message' => 'Upload failed or invalid file type']);
+        echo json_encode(['status' => 'error', 'message' => 'No file received']);
     } catch (Exception $e) {
-        echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+        echo json_encode(['status' => 'error', 'message' => 'Exception: ' . $e->getMessage()]);
     }
     exit;
 }
