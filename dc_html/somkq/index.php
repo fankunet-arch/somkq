@@ -228,12 +228,21 @@ function handle_save_day_all($pdo, $config) {
         // 图片处理
         $image_path = null;
         if (!empty($_FILES['cal_image']['name'])) {
-            $ext = strtolower(pathinfo($_FILES['cal_image']['name'], PATHINFO_EXTENSION));
-            if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'])) {
-                $filename = $date . '_' . uniqid() . '.' . $ext;
-                $target = $config['path_image_upload'] . '/' . $filename;
-                if (move_uploaded_file($_FILES['cal_image']['tmp_name'], $target)) {
-                    $image_path = $filename;
+            $file = $_FILES['cal_image'];
+            if ($file['error'] === UPLOAD_ERR_OK) {
+                $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+                if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'])) {
+                    $filename = $date . '_' . uniqid() . '.' . $ext;
+                    $target_dir = $config['path_image_upload'];
+
+                    if (!is_dir($target_dir)) {
+                        mkdir($target_dir, 0777, true);
+                    }
+
+                    $target = $target_dir . '/' . $filename;
+                    if (move_uploaded_file($file['tmp_name'], $target)) {
+                        $image_path = $filename;
+                    }
                 }
             }
         }
@@ -958,6 +967,7 @@ function view_day_detail($date, $data) {
                     </div>
                     <div style="display:flex; gap:10px; align-items:center;">
                          <input type="file" name="cal_image" accept="image/*" style="width:100%; font-size:12px;">
+                         <span style="font-size:10px; color:#999; white-space:nowrap;">(Max 2MB)</span>
                     </div>
                     <?php if(!empty($cal['calibration_image'])): ?>
                         <div style="margin-top:10px; font-size:12px; color:#007bff;">
