@@ -95,6 +95,15 @@ try {
             handle_upload_video_ajax($pdo, $config);
             break;
 
+        case 'monthly_report':
+            $year = isset($_GET['year']) ? (int)$_GET['year'] : (int)date('Y');
+            $month = isset($_GET['month']) ? (int)$_GET['month'] : (int)date('m');
+            $data = get_monthly_data($pdo, $config['staff_list'], $year, $month);
+            view_header($year . '年' . $month . '月考勤总表');
+            view_monthly_report($year, $month, $data);
+            view_footer();
+            break;
+
         default:
             header('Location: ?action=home');
             break;
@@ -502,6 +511,44 @@ function calc_display_time($time_str, $offset_seconds) {
     return date('H:i:s', $new_ts);
 }
 
+function get_monthly_data($pdo, $staff_list, $year, $month) {
+    // 生成该月所有日期
+    $days_in_month = cal_days_in_month(CAL_GREGORIAN, $month, $year);
+    $dates = [];
+    for ($day = 1; $day <= $days_in_month; $day++) {
+        $dates[] = sprintf('%04d-%02d-%02d', $year, $month, $day);
+    }
+
+    // 获取该月所有校准数据
+    $placeholders = str_repeat('?,', count($dates) - 1) . '?';
+    $stmt = $pdo->prepare("SELECT * FROM somkq_daily_calibration WHERE cal_date IN ($placeholders)");
+    $stmt->execute($dates);
+    $cal_map = [];
+    while ($row = $stmt->fetch()) {
+        $cal_map[$row['cal_date']] = $row;
+    }
+
+    // 获取该月所有班次记录
+    $stmt = $pdo->prepare("SELECT * FROM somkq_shift_records WHERE record_date IN ($placeholders) ORDER BY record_date, staff_name, shift_type");
+    $stmt->execute($dates);
+    $records_raw = $stmt->fetchAll();
+
+    // 组织数据结构: [日期][员工][班次类型]
+    $records_map = [];
+    foreach ($records_raw as $rec) {
+        $date = $rec['record_date'];
+        $staff = $rec['staff_name'];
+        $shift = $rec['shift_type'];
+        $records_map[$date][$staff][$shift] = $rec;
+    }
+
+    return [
+        'dates' => $dates,
+        'cal_map' => $cal_map,
+        'records_map' => $records_map
+    ];
+}
+
 // ==========================================
 // 视图层 (View) - Mobile Optimized
 // ==========================================
@@ -873,6 +920,7 @@ function view_login($error = null) {
 function view_dashboard($data, $offset) {
     ?>
     <div class="navbar">
+        <a href="?action=monthly_report">月度总表</a>
         <span class="title">工作台</span>
         <a href="?action=logout">退出</a>
     </div>
@@ -1043,6 +1091,135 @@ function view_day_detail($date, $data) {
              <button type="submit" class="btn" style="flex:1; font-size:16px; font-weight:bold;">保存所有更改</button>
         </div>
     </form>
+    <?php
+}
+
+function view_monthly_report($year, $month, $data) {
+    global $config;
+    $staff_list = $config['staff_list'];
+
+    // 导航月份计算
+    $prev_month = $month - 1;
+    $prev_year = $year;
+    if ($prev_month < 1) {
+        $prev_month = 12;
+        $prev_year--;
+    }
+
+    $next_month = $month + 1;
+    $next_year = $year;
+    if ($next_month > 12) {
+        $next_month = 1;
+        $next_year++;
+    }
+    ?>
+    <div class="navbar">
+        <a href="?action=home">← 工作台</a>
+        <div class="title" style="margin:0 10px; display:flex; align-items:center; justify-content:center;">
+            <a href="?action=monthly_report&year=<?php echo $prev_year; ?>&month=<?php echo $prev_month; ?>" style="font-size:18px; color:#bbb; padding:0 10px;">◀</a>
+            <span><?php echo $year; ?>年<?php echo $month; ?>月</span>
+            <a href="?action=monthly_report&year=<?php echo $next_year; ?>&month=<?php echo $next_month; ?>" style="font-size:18px; color:#bbb; padding:0 10px;">▶</a>
+        </div>
+        <a href="?action=logout">退出</a>
+    </div>
+
+    <div class="container" style="max-width:100%; padding: 12px;">
+        <div class="card">
+            <div class="card-header">📊 月度考勤总表</div>
+            <div class="card-body" style="padding:0; overflow-x: auto;">
+                <table style="width:100%; border-collapse: collapse; font-size:12px; min-width: 800px;">
+                    <thead>
+                        <tr style="background:#f5f5f5; position: sticky; top: 0; z-index: 10;">
+                            <th style="border:1px solid #ddd; padding:8px; min-width:80px;">日期</th>
+                            <?php foreach ($staff_list as $staff): ?>
+                                <th colspan="2" style="border:1px solid #ddd; padding:8px; background:#e3f2fd;">
+                                    <?php echo $staff; ?>
+                                </th>
+                            <?php endforeach; ?>
+                        </tr>
+                        <tr style="background:#fafafa; position: sticky; top: 41px; z-index: 10;">
+                            <th style="border:1px solid #ddd; padding:6px;">班次</th>
+                            <?php foreach ($staff_list as $staff): ?>
+                                <th style="border:1px solid #ddd; padding:6px; font-size:11px; background:#fff3e0;">上午班</th>
+                                <th style="border:1px solid #ddd; padding:6px; font-size:11px; background:#ffe0e0;">下午班</th>
+                            <?php endforeach; ?>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($data['dates'] as $date):
+                            $cal = $data['cal_map'][$date] ?? null;
+                            $offset = $cal['time_offset_seconds'] ?? 0;
+                            $day_of_week = date('w', strtotime($date));
+                            $week_names = ['日','一','二','三','四','五','六'];
+                            $is_weekend = ($day_of_week == 0 || $day_of_week == 6);
+                            $row_bg = $is_weekend ? '#fff9f0' : '#ffffff';
+                        ?>
+                        <tr style="background:<?php echo $row_bg; ?>;">
+                            <td style="border:1px solid #ddd; padding:6px; text-align:center; font-weight:500;">
+                                <?php echo date('m-d', strtotime($date)); ?><br>
+                                <span style="font-size:10px; color:#888;">周<?php echo $week_names[$day_of_week]; ?></span>
+                            </td>
+                            <?php foreach ($staff_list as $staff): ?>
+                                <?php foreach (['am', 'pm'] as $shift):
+                                    $rec = $data['records_map'][$date][$staff][$shift] ?? null;
+                                    $start_monitor = $rec['start_time_monitor'] ?? '';
+                                    $end_monitor = $rec['end_time_monitor'] ?? '';
+                                    $is_closing = $rec['is_end_at_closing'] ?? 0;
+
+                                    // 计算实际时间
+                                    $start_real = $start_monitor ? calc_display_time($start_monitor, $offset) : '';
+                                    $end_real = $is_closing ? '营业结束' : ($end_monitor ? calc_display_time($end_monitor, $offset) : '');
+
+                                    // 判断是否有校准（是否显示实际时间）
+                                    $has_calibration = ($cal !== null && $offset != 0);
+
+                                    // 显示逻辑：如果有校准，显示实际时间；否则显示监控时间并注明
+                                    if ($has_calibration) {
+                                        $display_start = $start_real;
+                                        $display_end = $end_real;
+                                        $time_label = '';
+                                    } else {
+                                        $display_start = $start_monitor;
+                                        $display_end = $is_closing ? '营业结束' : $end_monitor;
+                                        $time_label = '<span style="color:#999; font-size:9px;">(监控)</span>';
+                                    }
+                                ?>
+                                <td style="border:1px solid #ddd; padding:6px; font-size:11px; font-family:monospace;">
+                                    <?php if ($display_start || $display_end): ?>
+                                        <div style="margin-bottom:2px;">
+                                            <span style="color:#28a745;">上:</span>
+                                            <?php echo $display_start ?: '<span style="color:#ccc;">--</span>'; ?>
+                                        </div>
+                                        <div>
+                                            <span style="color:#dc3545;">下:</span>
+                                            <?php echo $display_end ?: '<span style="color:#ccc;">--</span>'; ?>
+                                        </div>
+                                        <?php if (!$has_calibration && ($display_start || $display_end)): ?>
+                                            <div style="text-align:center; margin-top:2px;"><?php echo $time_label; ?></div>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        <span style="color:#ccc; font-style:italic;">无记录</span>
+                                    <?php endif; ?>
+                                </td>
+                                <?php endforeach; ?>
+                            <?php endforeach; ?>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div style="margin-top: 15px; padding: 10px; background: #fff; border-radius: 8px; font-size: 12px; color: #666;">
+            <div style="font-weight: bold; margin-bottom: 8px;">说明：</div>
+            <ul style="margin: 0; padding-left: 20px;">
+                <li>显示时间优先级：如果当天有校准数据，显示<strong>实际时间</strong>；否则显示<strong>监控时间</strong>并标注"(监控)"</li>
+                <li>周末行以浅黄色背景显示</li>
+                <li><span style="color:#28a745;">上:</span> 表示上班时间，<span style="color:#dc3545;">下:</span> 表示下班时间</li>
+                <li>"营业结束"表示该班次工作至营业结束时间</li>
+            </ul>
+        </div>
+    </div>
     <?php
 }
 ?>
