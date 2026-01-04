@@ -1048,9 +1048,19 @@ function view_day_detail($date, $data) {
             </div>
 
             <!-- 员工班次卡片 -->
-            <?php foreach ($data['staff_data'] as $staff_name => $shifts): ?>
-            <div class="card">
-                <div class="card-header" style="background:#f8f9fa;">
+            <?php
+            // 为每个员工定义淡色背景
+            $staff_colors = [
+                'YI' => ['bg' => '#e3f2fd', 'header' => '#bbdefb'],      // 淡蓝色
+                'JIAN' => ['bg' => '#e8f5e9', 'header' => '#c8e6c9'],    // 淡绿色
+                'IRE' => ['bg' => '#fce4ec', 'header' => '#f8bbd0']      // 淡粉色
+            ];
+
+            foreach ($data['staff_data'] as $staff_name => $shifts):
+                $colors = $staff_colors[$staff_name] ?? ['bg' => '#f8f9fa', 'header' => '#e9ecef'];
+            ?>
+            <div class="card" style="background:<?php echo $colors['bg']; ?>;">
+                <div class="card-header" style="background:<?php echo $colors['header']; ?>; border-bottom-color:<?php echo $colors['header']; ?>;">
                     👤 <?php echo $staff_name; ?>
                 </div>
                 <div class="card-body" style="padding:0;">
