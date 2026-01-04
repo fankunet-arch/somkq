@@ -535,17 +535,31 @@ function get_monthly_data($pdo, $staff_list, $year, $month) {
 
     // 组织数据结构: [日期][员工][班次类型]
     $records_map = [];
+    $record_ids = [];
     foreach ($records_raw as $rec) {
         $date = $rec['record_date'];
         $staff = $rec['staff_name'];
         $shift = $rec['shift_type'];
         $records_map[$date][$staff][$shift] = $rec;
+        $record_ids[] = $rec['id'];
+    }
+
+    // 获取该月所有班次的视频记录
+    $videos_map = [];
+    if (!empty($record_ids)) {
+        $placeholders_videos = str_repeat('?,', count($record_ids) - 1) . '?';
+        $stmt = $pdo->prepare("SELECT * FROM somkq_shift_videos WHERE record_id IN ($placeholders_videos)");
+        $stmt->execute($record_ids);
+        while ($v = $stmt->fetch()) {
+            $videos_map[$v['record_id']][$v['timing_type']][] = $v;
+        }
     }
 
     return [
         'dates' => $dates,
         'cal_map' => $cal_map,
-        'records_map' => $records_map
+        'records_map' => $records_map,
+        'videos_map' => $videos_map
     ];
 }
 
@@ -875,9 +889,15 @@ function view_video_grid($date, $staff, $shift_type, $timing_type, $videos, $rec
         <div class="media-item">
             <div class="media-content">
                 <?php if($exists): ?>
-                    <a href="<?php echo $file_url; ?>" target="_blank" style="display:block;width:100%;height:100%;">
-                        <video src="<?php echo $file_url; ?>#t=0.1" class="video-thumb" preload="metadata" muted></video>
-                    </a>
+                    <div style="display:flex; flex-direction:column; height:100%;">
+                        <a href="<?php echo $file_url; ?>" target="_blank" style="flex:1; display:block;">
+                            <video src="<?php echo $file_url; ?>#t=0.1" class="video-thumb" preload="metadata" muted></video>
+                        </a>
+                        <a href="<?php echo $file_url; ?>" download="<?php echo $v['original_name']; ?>"
+                           style="display:block; background:#f0f0f0; text-align:center; padding:2px; font-size:9px; color:#666; text-decoration:none; border-top:1px solid #ddd;">
+                            下载
+                        </a>
+                    </div>
                 <?php else: ?>
                     <div class="video-missing">⚠️丢失</div>
                 <?php endif; ?>
@@ -1020,6 +1040,8 @@ function view_day_detail($date, $data) {
                     <?php if(!empty($cal['calibration_image'])): ?>
                         <div style="margin-top:10px; font-size:12px; color:#007bff;">
                             <a href="<?php echo $config['url_image'] . '/' . $cal['calibration_image']; ?>" target="_blank">查看已上传凭证图</a>
+                            |
+                            <a href="<?php echo $config['url_image'] . '/' . $cal['calibration_image']; ?>" download="<?php echo $cal['calibration_image']; ?>">下载</a>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -1165,6 +1187,7 @@ function view_monthly_report($year, $month, $data) {
                                     $start_monitor = $rec['start_time_monitor'] ?? '';
                                     $end_monitor = $rec['end_time_monitor'] ?? '';
                                     $is_closing = $rec['is_end_at_closing'] ?? 0;
+                                    $record_id = $rec['id'] ?? null;
 
                                     // 计算实际时间
                                     $start_real = $start_monitor ? calc_display_time($start_monitor, $offset) : '';
@@ -1183,17 +1206,39 @@ function view_monthly_report($year, $month, $data) {
                                         $display_end = $is_closing ? '营业结束' : $end_monitor;
                                         $time_label = '<span style="color:#999; font-size:9px;">(监控)</span>';
                                     }
+
+                                    // 检查是否有视频记录
+                                    $has_start_video = false;
+                                    $has_end_video = false;
+                                    if ($record_id && isset($data['videos_map'][$record_id])) {
+                                        $has_start_video = !empty($data['videos_map'][$record_id]['start']);
+                                        $has_end_video = !empty($data['videos_map'][$record_id]['end']);
+                                    }
+
+                                    // 检查是否有校准图片（仅当班次为上午班时显示）
+                                    $has_cal_image = ($shift === 'am' && !empty($cal['calibration_image']));
                                 ?>
                                 <td style="border:1px solid #ddd; padding:6px; font-size:11px; font-family:monospace;">
                                     <?php if ($display_start || $display_end): ?>
                                         <div style="margin-bottom:2px;">
                                             <span style="color:#28a745;">上:</span>
                                             <?php echo $display_start ?: '<span style="color:#ccc;">--</span>'; ?>
+                                            <?php if ($has_start_video): ?>
+                                                <span style="color:#007bff; font-size:10px; margin-left:2px;" title="有视频记录">🎥</span>
+                                            <?php endif; ?>
                                         </div>
                                         <div>
                                             <span style="color:#dc3545;">下:</span>
                                             <?php echo $display_end ?: '<span style="color:#ccc;">--</span>'; ?>
+                                            <?php if ($has_end_video): ?>
+                                                <span style="color:#007bff; font-size:10px; margin-left:2px;" title="有视频记录">🎥</span>
+                                            <?php endif; ?>
                                         </div>
+                                        <?php if ($has_cal_image): ?>
+                                            <div style="margin-top:2px;">
+                                                <span style="color:#ff9800; font-size:10px;" title="有校准图片">📷</span>
+                                            </div>
+                                        <?php endif; ?>
                                         <?php if (!$has_calibration && ($display_start || $display_end)): ?>
                                             <div style="text-align:center; margin-top:2px;"><?php echo $time_label; ?></div>
                                         <?php endif; ?>
@@ -1217,6 +1262,7 @@ function view_monthly_report($year, $month, $data) {
                 <li>周末行以浅黄色背景显示</li>
                 <li><span style="color:#28a745;">上:</span> 表示上班时间，<span style="color:#dc3545;">下:</span> 表示下班时间</li>
                 <li>"营业结束"表示该班次工作至营业结束时间</li>
+                <li>🎥 表示该时间点有视频记录，📷 表示有校准图片</li>
             </ul>
         </div>
     </div>
