@@ -1051,8 +1051,8 @@ function view_day_detail($date, $data) {
             <?php
             // 为每个员工定义淡色背景
             $staff_colors = [
-                'YI' => ['bg' => '#e3f2fd', 'header' => '#bbdefb'],      // 淡蓝色
-                'JIAN' => ['bg' => '#e8f5e9', 'header' => '#c8e6c9'],    // 淡绿色
+                'YI' => ['bg' => '#e8f5e9', 'header' => '#c8e6c9'],      // 淡绿色
+                'JIAN' => ['bg' => '#f5f5dc', 'header' => '#e6e6c8'],    // 浅土色(米色)
                 'IRE' => ['bg' => '#fce4ec', 'header' => '#f8bbd0']      // 淡粉色
             ];
 
