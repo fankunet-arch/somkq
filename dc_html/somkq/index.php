@@ -1147,10 +1147,22 @@ function view_monthly_report($year, $month, $data) {
     ?>
     <div class="navbar">
         <a href="?action=home">← 工作台</a>
-        <div class="title" style="margin:0 10px; display:flex; align-items:center; justify-content:center;">
-            <a href="?action=monthly_report&year=<?php echo $prev_year; ?>&month=<?php echo $prev_month; ?>" style="font-size:18px; color:#bbb; padding:0 10px;">◀</a>
-            <span><?php echo $year; ?>年<?php echo $month; ?>月</span>
-            <a href="?action=monthly_report&year=<?php echo $next_year; ?>&month=<?php echo $next_month; ?>" style="font-size:18px; color:#bbb; padding:0 10px;">▶</a>
+        <div class="title" style="margin:0 10px; display:flex; align-items:center; justify-content:center; gap:10px;">
+            <a href="?action=monthly_report&year=<?php echo $prev_year; ?>&month=<?php echo $prev_month; ?>" style="font-size:18px; color:#bbb; padding:0 5px;">◀</a>
+            <form method="get" action="" style="display:flex; align-items:center; gap:5px; margin:0;">
+                <input type="hidden" name="action" value="monthly_report">
+                <select name="year" style="padding:4px; border:1px solid #ddd; border-radius:4px; background:#fff;" onchange="this.form.submit()">
+                    <?php for ($y = date('Y'); $y >= date('Y') - 3; $y--): ?>
+                        <option value="<?php echo $y; ?>" <?php echo ($y == $year) ? 'selected' : ''; ?>><?php echo $y; ?>年</option>
+                    <?php endfor; ?>
+                </select>
+                <select name="month" style="padding:4px; border:1px solid #ddd; border-radius:4px; background:#fff;" onchange="this.form.submit()">
+                    <?php for ($m = 1; $m <= 12; $m++): ?>
+                        <option value="<?php echo $m; ?>" <?php echo ($m == $month) ? 'selected' : ''; ?>><?php echo $m; ?>月</option>
+                    <?php endfor; ?>
+                </select>
+            </form>
+            <a href="?action=monthly_report&year=<?php echo $next_year; ?>&month=<?php echo $next_month; ?>" style="font-size:18px; color:#bbb; padding:0 5px;">▶</a>
         </div>
         <a href="?action=logout">退出</a>
     </div>
@@ -1188,8 +1200,10 @@ function view_monthly_report($year, $month, $data) {
                         ?>
                         <tr style="background:<?php echo $row_bg; ?>;">
                             <td style="border:1px solid #ddd; padding:6px; text-align:center; font-weight:500;">
-                                <?php echo date('m-d', strtotime($date)); ?><br>
-                                <span style="font-size:10px; color:#888;">周<?php echo $week_names[$day_of_week]; ?></span>
+                                <a href="?action=day_view&date=<?php echo $date; ?>" style="text-decoration:none; color:#007bff; display:block;">
+                                    <?php echo date('m-d', strtotime($date)); ?><br>
+                                    <span style="font-size:10px; color:#888;">周<?php echo $week_names[$day_of_week]; ?></span>
+                                </a>
                             </td>
                             <?php foreach ($staff_list as $staff): ?>
                                 <?php foreach (['am', 'pm'] as $shift):
@@ -1268,6 +1282,8 @@ function view_monthly_report($year, $month, $data) {
         <div style="margin-top: 15px; padding: 10px; background: #fff; border-radius: 8px; font-size: 12px; color: #666;">
             <div style="font-weight: bold; margin-bottom: 8px;">说明：</div>
             <ul style="margin: 0; padding-left: 20px;">
+                <li><strong>点击日期</strong>可以跳转到当天的详细记录页面</li>
+                <li>使用顶部的<strong>年份和月份选择器</strong>可以快速跳转到任意月份，或使用 ◀ ▶ 按钮逐月浏览</li>
                 <li>显示时间优先级：如果当天有校准数据，显示<strong>实际时间</strong>；否则显示<strong>监控时间</strong>并标注"(监控)"</li>
                 <li>周末行以浅黄色背景显示</li>
                 <li><span style="color:#28a745;">上:</span> 表示上班时间，<span style="color:#dc3545;">下:</span> 表示下班时间</li>
