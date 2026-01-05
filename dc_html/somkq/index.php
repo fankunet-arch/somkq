@@ -46,6 +46,11 @@ try {
             $input_pass = $_POST['password'] ?? '';
             if ($input_pass === $config['admin_password']) {
                 $_SESSION['is_logged_in'] = true;
+                $_SESSION['user_role'] = 'admin'; // 管理员：完整权限
+                header('Location: ?action=home');
+            } elseif ($input_pass === $config['readonly_password']) {
+                $_SESSION['is_logged_in'] = true;
+                $_SESSION['user_role'] = 'readonly'; // 只读用户：仅查看和下载
                 header('Location: ?action=home');
             } else {
                 view_header('系统登录');
@@ -76,22 +81,39 @@ try {
             break;
 
         case 'save_cal':
+            if (($_SESSION['user_role'] ?? '') !== 'admin') {
+                die('权限不足：只有管理员可以修改数据');
+            }
             handle_save_calibration($pdo, $config);
             break;
 
         case 'save_shift':
+            if (($_SESSION['user_role'] ?? '') !== 'admin') {
+                die('权限不足：只有管理员可以修改数据');
+            }
             handle_save_shift($pdo);
             break;
 
         case 'save_day_all':
+            if (($_SESSION['user_role'] ?? '') !== 'admin') {
+                die('权限不足：只有管理员可以修改数据');
+            }
             handle_save_day_all($pdo, $config);
             break;
 
         case 'upload_video':
+            if (($_SESSION['user_role'] ?? '') !== 'admin') {
+                die('权限不足：只有管理员可以上传文件');
+            }
             handle_upload_video($pdo, $config);
             break;
 
         case 'upload_video_ajax':
+            if (($_SESSION['user_role'] ?? '') !== 'admin') {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => '权限不足：只有管理员可以上传文件']);
+                exit;
+            }
             handle_upload_video_ajax($pdo, $config);
             break;
 
@@ -283,6 +305,7 @@ function handle_save_day_all($pdo, $config) {
                 $start = get_post_time_from_array($data['start_time'] ?? []);
                 $end = get_post_time_from_array($data['end_time'] ?? []);
                 $is_closing = isset($data['is_end_at_closing']) ? 1 : 0;
+                $special_tag = isset($data['special_tag']) && !empty($data['special_tag']) ? $data['special_tag'] : null;
 
                 // 查找现有记录 ID
                 $stmt = $pdo->prepare("SELECT id FROM somkq_shift_records WHERE record_date=? AND staff_name=? AND shift_type=?");
@@ -290,13 +313,13 @@ function handle_save_day_all($pdo, $config) {
                 $existing_id = $stmt->fetchColumn();
 
                 if ($existing_id) {
-                    $stmt = $pdo->prepare("UPDATE somkq_shift_records SET start_time_monitor=?, end_time_monitor=?, is_end_at_closing=? WHERE id=?");
-                    $stmt->execute([$start, $end, $is_closing, $existing_id]);
+                    $stmt = $pdo->prepare("UPDATE somkq_shift_records SET start_time_monitor=?, end_time_monitor=?, is_end_at_closing=?, special_tag=? WHERE id=?");
+                    $stmt->execute([$start, $end, $is_closing, $special_tag, $existing_id]);
                 } else {
                     // 只有当有数据输入时才插入新记录
-                    if ($start || $end || $is_closing) {
-                        $stmt = $pdo->prepare("INSERT INTO somkq_shift_records (record_date, staff_name, shift_type, start_time_monitor, end_time_monitor, is_end_at_closing) VALUES (?, ?, ?, ?, ?, ?)");
-                        $stmt->execute([$date, $staff, $shift_type, $start, $end, $is_closing]);
+                    if ($start || $end || $is_closing || $special_tag) {
+                        $stmt = $pdo->prepare("INSERT INTO somkq_shift_records (record_date, staff_name, shift_type, start_time_monitor, end_time_monitor, is_end_at_closing, special_tag) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->execute([$date, $staff, $shift_type, $start, $end, $is_closing, $special_tag]);
                     }
                 }
             }
@@ -878,7 +901,7 @@ function view_time_input_visual($name, $value_str, $id_suffix = '') {
 }
 
 // 核心组件：视频格子渲染
-function view_video_grid($date, $staff, $shift_type, $timing_type, $videos, $record_id, $config) {
+function view_video_grid($date, $staff, $shift_type, $timing_type, $videos, $record_id, $config, $is_admin = true) {
     ?>
     <div class="media-grid">
         <?php foreach($videos as $v):
@@ -905,7 +928,7 @@ function view_video_grid($date, $staff, $shift_type, $timing_type, $videos, $rec
         </div>
         <?php endforeach; ?>
 
-        <?php if(count($videos) < 3): ?>
+        <?php if($is_admin && count($videos) < 3): ?>
         <div class="media-item">
             <label class="media-content upload-btn">
                 +
@@ -995,6 +1018,10 @@ function view_day_detail($date, $data) {
     $offset = $cal['time_offset_seconds'] ?? null;
     $offset_display = is_numeric($offset) ? $offset : 0;
 
+    // 检查用户权限
+    $is_admin = ($_SESSION['user_role'] ?? '') === 'admin';
+    $is_readonly = ($_SESSION['user_role'] ?? '') === 'readonly';
+
     // 导航日期计算
     $prev_day = date('Y-m-d', strtotime($date . ' -1 day'));
     $next_day = date('Y-m-d', strtotime($date . ' +1 day'));
@@ -1006,10 +1033,19 @@ function view_day_detail($date, $data) {
              <span><?php echo $date; ?></span>
              <a href="?action=day_view&date=<?php echo $next_day; ?>" style="font-size:18px; color:#bbb; padding:0 10px;">▶</a>
         </div>
-        <div style="width:40px;"></div> <!-- 占位保持居中 -->
+        <div style="display:flex; align-items:center; gap:10px;">
+            <?php if ($is_readonly): ?>
+                <span style="font-size:12px; color:#ff9800; background:#fff3e0; padding:4px 8px; border-radius:4px;">👁️ 只读模式</span>
+            <?php endif; ?>
+            <a href="?action=logout">退出</a>
+        </div>
     </div>
 
+    <?php if ($is_admin): ?>
     <form action="?action=save_day_all" method="post" enctype="multipart/form-data" id="main-form">
+    <?php else: ?>
+    <div>
+    <?php endif; ?>
         <input type="hidden" name="date" value="<?php echo $date; ?>">
 
         <div class="container" style="padding-bottom: 80px;">
@@ -1023,20 +1059,37 @@ function view_day_detail($date, $data) {
                     <input type="hidden" id="current-offset" value="<?php echo $offset_display; ?>">
                 </div>
                 <div class="card-body">
-                    <div style="display:flex; gap:10px; margin-bottom:10px;">
-                        <div style="flex:1;">
-                            <label style="font-size:12px;color:#666;">监控时间</label>
-                            <?php view_time_input_visual('calibration[monitor_time]', $cal['monitor_time_ref'] ?? '', 'cal-monitor'); ?>
+                    <?php if ($is_admin): ?>
+                        <div style="display:flex; gap:10px; margin-bottom:10px;">
+                            <div style="flex:1;">
+                                <label style="font-size:12px;color:#666;">监控时间</label>
+                                <?php view_time_input_visual('calibration[monitor_time]', $cal['monitor_time_ref'] ?? '', 'cal-monitor'); ?>
+                            </div>
+                            <div style="flex:1;">
+                                <label style="font-size:12px;color:#666;">实际时间</label>
+                                <?php view_time_input_visual('calibration[real_time]', $cal['real_time_ref'] ?? '', 'cal-real'); ?>
+                            </div>
                         </div>
-                        <div style="flex:1;">
-                            <label style="font-size:12px;color:#666;">实际时间</label>
-                            <?php view_time_input_visual('calibration[real_time]', $cal['real_time_ref'] ?? '', 'cal-real'); ?>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                             <input type="file" name="cal_image" accept="image/*" style="width:100%; font-size:12px;">
+                             <span style="font-size:10px; color:#999; white-space:nowrap;">(Max 2MB)</span>
                         </div>
-                    </div>
-                    <div style="display:flex; gap:10px; align-items:center;">
-                         <input type="file" name="cal_image" accept="image/*" style="width:100%; font-size:12px;">
-                         <span style="font-size:10px; color:#999; white-space:nowrap;">(Max 2MB)</span>
-                    </div>
+                    <?php else: ?>
+                        <div style="display:flex; gap:10px; margin-bottom:10px;">
+                            <div style="flex:1;">
+                                <label style="font-size:12px;color:#666;">监控时间</label>
+                                <div style="padding:8px; background:#f5f5f5; border-radius:4px; font-family:monospace; color:#333;">
+                                    <?php echo $cal['monitor_time_ref'] ?? '未设置'; ?>
+                                </div>
+                            </div>
+                            <div style="flex:1;">
+                                <label style="font-size:12px;color:#666;">实际时间</label>
+                                <div style="padding:8px; background:#f5f5f5; border-radius:4px; font-family:monospace; color:#333;">
+                                    <?php echo $cal['real_time_ref'] ?? '未设置'; ?>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
                     <?php if(!empty($cal['calibration_image'])): ?>
                         <div style="margin-top:10px; font-size:12px; color:#007bff;">
                             <a href="<?php echo $config['url_image'] . '/' . $cal['calibration_image']; ?>" target="_blank">查看已上传凭证图</a>
@@ -1077,8 +1130,26 @@ function view_day_detail($date, $data) {
                         $prefix = "shifts[$staff_name][$type_key]";
                     ?>
                     <div style="padding:15px; border-bottom:1px solid #eee;">
-                        <div style="font-weight:bold; margin-bottom:12px; font-size:16px; color:#444;">
-                            <?php echo $type_name; ?>
+                        <div style="font-weight:bold; margin-bottom:12px; font-size:16px; color:#444; display:flex; justify-content:space-between; align-items:center;">
+                            <span><?php echo $type_name; ?></span>
+                            <?php if ($is_admin): ?>
+                                <select name="<?php echo $prefix; ?>[special_tag]" style="padding:4px 8px; border:1px solid #ddd; border-radius:4px; background:#fff; font-size:12px; color:#666;">
+                                    <option value="">无标记</option>
+                                    <option value="补货" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '补货') ? 'selected' : ''; ?>>📦 补货</option>
+                                    <option value="加班" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '加班') ? 'selected' : ''; ?>>⏰ 加班</option>
+                                    <option value="培训" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '培训') ? 'selected' : ''; ?>>📚 培训</option>
+                                    <option value="盘点" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '盘点') ? 'selected' : ''; ?>>📋 盘点</option>
+                                </select>
+                            <?php else: ?>
+                                <?php if (!empty($rec['special_tag'])): ?>
+                                    <span style="background:#ff9800; color:#fff; padding:4px 8px; border-radius:4px; font-size:12px;">
+                                        <?php
+                                        $tag_emoji = ['补货' => '📦', '加班' => '⏰', '培训' => '📚', '盘点' => '📋'];
+                                        echo ($tag_emoji[$rec['special_tag']] ?? '') . ' ' . $rec['special_tag'];
+                                        ?>
+                                    </span>
+                                <?php endif; ?>
+                            <?php endif; ?>
                         </div>
 
                         <!-- 隐藏域: 记录ID, 方便后端判断是更新还是插入 -->
@@ -1091,8 +1162,14 @@ function view_day_detail($date, $data) {
                                     实: <?php echo $r_start ?: '--:--'; ?>
                                 </span>
                             </div>
-                            <?php view_time_input_visual($prefix . '[start_time]', $m_start, "{$staff_name}_{$type_key}_start"); ?>
-                            <?php view_video_grid($date, $staff_name, $type_key, 'start', $info['videos_start'], $record_id, $config); ?>
+                            <?php if ($is_admin): ?>
+                                <?php view_time_input_visual($prefix . '[start_time]', $m_start, "{$staff_name}_{$type_key}_start"); ?>
+                            <?php else: ?>
+                                <div style="padding:8px; background:#f5f5f5; border-radius:4px; font-family:monospace; color:#333; margin-bottom:8px;">
+                                    <?php echo $m_start ?: '未设置'; ?>
+                                </div>
+                            <?php endif; ?>
+                            <?php view_video_grid($date, $staff_name, $type_key, 'start', $info['videos_start'], $record_id, $config, $is_admin); ?>
                         </div>
 
                         <div class="action-section end">
@@ -1102,14 +1179,18 @@ function view_day_detail($date, $data) {
                                     实: <?php echo $r_end ?: '--:--'; ?>
                                 </span>
                             </div>
-                            <?php view_time_input_visual($prefix . '[end_time]', $m_end, "{$staff_name}_{$type_key}_end"); ?>
-
-                            <label class="closing-checkbox-label">
-                                <input type="checkbox" name="<?php echo $prefix; ?>[is_end_at_closing]" class="is-closing-check" <?php echo $is_closing?'checked':''; ?>>
-                                标记为“至营业结束”
-                            </label>
-
-                            <?php view_video_grid($date, $staff_name, $type_key, 'end', $info['videos_end'], $record_id, $config); ?>
+                            <?php if ($is_admin): ?>
+                                <?php view_time_input_visual($prefix . '[end_time]', $m_end, "{$staff_name}_{$type_key}_end"); ?>
+                                <label class="closing-checkbox-label">
+                                    <input type="checkbox" name="<?php echo $prefix; ?>[is_end_at_closing]" class="is-closing-check" <?php echo $is_closing?'checked':''; ?>>
+                                    标记为"至营业结束"
+                                </label>
+                            <?php else: ?>
+                                <div style="padding:8px; background:#f5f5f5; border-radius:4px; font-family:monospace; color:#333; margin-bottom:8px;">
+                                    <?php echo $is_closing ? '营业结束' : ($m_end ?: '未设置'); ?>
+                                </div>
+                            <?php endif; ?>
+                            <?php view_video_grid($date, $staff_name, $type_key, 'end', $info['videos_end'], $record_id, $config, $is_admin); ?>
                         </div>
                     </div>
                     <?php endforeach; ?>
@@ -1119,10 +1200,16 @@ function view_day_detail($date, $data) {
         </div>
 
         <!-- 悬浮保存条 -->
+        <?php if ($is_admin): ?>
         <div style="position:fixed; bottom:0; left:0; width:100%; padding:10px; background:#fff; border-top:1px solid #ddd; box-shadow:0 -2px 10px rgba(0,0,0,0.1); display:flex; gap:10px; z-index:900;">
              <button type="submit" class="btn" style="flex:1; font-size:16px; font-weight:bold;">保存所有更改</button>
         </div>
+        <?php endif; ?>
+    <?php if ($is_admin): ?>
     </form>
+    <?php else: ?>
+    </div>
+    <?php endif; ?>
     <?php
 }
 
@@ -1147,10 +1234,22 @@ function view_monthly_report($year, $month, $data) {
     ?>
     <div class="navbar">
         <a href="?action=home">← 工作台</a>
-        <div class="title" style="margin:0 10px; display:flex; align-items:center; justify-content:center;">
-            <a href="?action=monthly_report&year=<?php echo $prev_year; ?>&month=<?php echo $prev_month; ?>" style="font-size:18px; color:#bbb; padding:0 10px;">◀</a>
-            <span><?php echo $year; ?>年<?php echo $month; ?>月</span>
-            <a href="?action=monthly_report&year=<?php echo $next_year; ?>&month=<?php echo $next_month; ?>" style="font-size:18px; color:#bbb; padding:0 10px;">▶</a>
+        <div class="title" style="margin:0 10px; display:flex; align-items:center; justify-content:center; gap:10px;">
+            <a href="?action=monthly_report&year=<?php echo $prev_year; ?>&month=<?php echo $prev_month; ?>" style="font-size:18px; color:#bbb; padding:0 5px;">◀</a>
+            <form method="get" action="" style="display:flex; align-items:center; gap:5px; margin:0;">
+                <input type="hidden" name="action" value="monthly_report">
+                <select name="year" style="padding:4px; border:1px solid #ddd; border-radius:4px; background:#fff;" onchange="this.form.submit()">
+                    <?php for ($y = date('Y'); $y >= date('Y') - 3; $y--): ?>
+                        <option value="<?php echo $y; ?>" <?php echo ($y == $year) ? 'selected' : ''; ?>><?php echo $y; ?>年</option>
+                    <?php endfor; ?>
+                </select>
+                <select name="month" style="padding:4px; border:1px solid #ddd; border-radius:4px; background:#fff;" onchange="this.form.submit()">
+                    <?php for ($m = 1; $m <= 12; $m++): ?>
+                        <option value="<?php echo $m; ?>" <?php echo ($m == $month) ? 'selected' : ''; ?>><?php echo $m; ?>月</option>
+                    <?php endfor; ?>
+                </select>
+            </form>
+            <a href="?action=monthly_report&year=<?php echo $next_year; ?>&month=<?php echo $next_month; ?>" style="font-size:18px; color:#bbb; padding:0 5px;">▶</a>
         </div>
         <a href="?action=logout">退出</a>
     </div>
@@ -1188,8 +1287,10 @@ function view_monthly_report($year, $month, $data) {
                         ?>
                         <tr style="background:<?php echo $row_bg; ?>;">
                             <td style="border:1px solid #ddd; padding:6px; text-align:center; font-weight:500;">
-                                <?php echo date('m-d', strtotime($date)); ?><br>
-                                <span style="font-size:10px; color:#888;">周<?php echo $week_names[$day_of_week]; ?></span>
+                                <a href="?action=day_view&date=<?php echo $date; ?>" style="text-decoration:none; color:#007bff; display:block;">
+                                    <?php echo date('m-d', strtotime($date)); ?><br>
+                                    <span style="font-size:10px; color:#888;">周<?php echo $week_names[$day_of_week]; ?></span>
+                                </a>
                             </td>
                             <?php foreach ($staff_list as $staff): ?>
                                 <?php foreach (['am', 'pm'] as $shift):
@@ -1198,6 +1299,7 @@ function view_monthly_report($year, $month, $data) {
                                     $end_monitor = $rec['end_time_monitor'] ?? '';
                                     $is_closing = $rec['is_end_at_closing'] ?? 0;
                                     $record_id = $rec['id'] ?? null;
+                                    $special_tag = $rec['special_tag'] ?? '';
 
                                     // 计算实际时间
                                     $start_real = $start_monitor ? calc_display_time($start_monitor, $offset) : '';
@@ -1229,7 +1331,22 @@ function view_monthly_report($year, $month, $data) {
                                     $has_cal_image = ($shift === 'am' && !empty($cal['calibration_image']));
                                 ?>
                                 <td style="border:1px solid #ddd; padding:6px; font-size:11px; font-family:monospace;">
-                                    <?php if ($display_start || $display_end): ?>
+                                    <?php if ($display_start || $display_end || $special_tag): ?>
+                                        <?php if ($special_tag): ?>
+                                            <div style="margin-bottom:4px; text-align:center;">
+                                                <span style="background:#ff9800; color:#fff; padding:2px 6px; border-radius:3px; font-size:9px; font-weight:bold; display:inline-block;">
+                                                    <?php
+                                                    $tag_emoji = [
+                                                        '补货' => '📦',
+                                                        '加班' => '⏰',
+                                                        '培训' => '📚',
+                                                        '盘点' => '📋'
+                                                    ];
+                                                    echo ($tag_emoji[$special_tag] ?? '') . ' ' . $special_tag;
+                                                    ?>
+                                                </span>
+                                            </div>
+                                        <?php endif; ?>
                                         <div style="margin-bottom:2px;">
                                             <span style="color:#28a745;">上:</span>
                                             <?php echo $display_start ?: '<span style="color:#ccc;">--</span>'; ?>
@@ -1268,11 +1385,14 @@ function view_monthly_report($year, $month, $data) {
         <div style="margin-top: 15px; padding: 10px; background: #fff; border-radius: 8px; font-size: 12px; color: #666;">
             <div style="font-weight: bold; margin-bottom: 8px;">说明：</div>
             <ul style="margin: 0; padding-left: 20px;">
+                <li><strong>点击日期</strong>可以跳转到当天的详细记录页面</li>
+                <li>使用顶部的<strong>年份和月份选择器</strong>可以快速跳转到任意月份，或使用 ◀ ▶ 按钮逐月浏览</li>
                 <li>显示时间优先级：如果当天有校准数据，显示<strong>实际时间</strong>；否则显示<strong>监控时间</strong>并标注"(监控)"</li>
                 <li>周末行以浅黄色背景显示</li>
                 <li><span style="color:#28a745;">上:</span> 表示上班时间，<span style="color:#dc3545;">下:</span> 表示下班时间</li>
                 <li>"营业结束"表示该班次工作至营业结束时间</li>
                 <li>🎥 表示该时间点有视频记录，📷 表示有校准图片</li>
+                <li>橙色标签显示特殊标记（如 📦 补货、⏰ 加班、📚 培训、📋 盘点），可在日常记录页面设置</li>
             </ul>
         </div>
     </div>
