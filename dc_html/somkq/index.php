@@ -283,6 +283,7 @@ function handle_save_day_all($pdo, $config) {
                 $start = get_post_time_from_array($data['start_time'] ?? []);
                 $end = get_post_time_from_array($data['end_time'] ?? []);
                 $is_closing = isset($data['is_end_at_closing']) ? 1 : 0;
+                $special_tag = isset($data['special_tag']) && !empty($data['special_tag']) ? $data['special_tag'] : null;
 
                 // 查找现有记录 ID
                 $stmt = $pdo->prepare("SELECT id FROM somkq_shift_records WHERE record_date=? AND staff_name=? AND shift_type=?");
@@ -290,13 +291,13 @@ function handle_save_day_all($pdo, $config) {
                 $existing_id = $stmt->fetchColumn();
 
                 if ($existing_id) {
-                    $stmt = $pdo->prepare("UPDATE somkq_shift_records SET start_time_monitor=?, end_time_monitor=?, is_end_at_closing=? WHERE id=?");
-                    $stmt->execute([$start, $end, $is_closing, $existing_id]);
+                    $stmt = $pdo->prepare("UPDATE somkq_shift_records SET start_time_monitor=?, end_time_monitor=?, is_end_at_closing=?, special_tag=? WHERE id=?");
+                    $stmt->execute([$start, $end, $is_closing, $special_tag, $existing_id]);
                 } else {
                     // 只有当有数据输入时才插入新记录
-                    if ($start || $end || $is_closing) {
-                        $stmt = $pdo->prepare("INSERT INTO somkq_shift_records (record_date, staff_name, shift_type, start_time_monitor, end_time_monitor, is_end_at_closing) VALUES (?, ?, ?, ?, ?, ?)");
-                        $stmt->execute([$date, $staff, $shift_type, $start, $end, $is_closing]);
+                    if ($start || $end || $is_closing || $special_tag) {
+                        $stmt = $pdo->prepare("INSERT INTO somkq_shift_records (record_date, staff_name, shift_type, start_time_monitor, end_time_monitor, is_end_at_closing, special_tag) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->execute([$date, $staff, $shift_type, $start, $end, $is_closing, $special_tag]);
                     }
                 }
             }
@@ -1077,8 +1078,15 @@ function view_day_detail($date, $data) {
                         $prefix = "shifts[$staff_name][$type_key]";
                     ?>
                     <div style="padding:15px; border-bottom:1px solid #eee;">
-                        <div style="font-weight:bold; margin-bottom:12px; font-size:16px; color:#444;">
-                            <?php echo $type_name; ?>
+                        <div style="font-weight:bold; margin-bottom:12px; font-size:16px; color:#444; display:flex; justify-content:space-between; align-items:center;">
+                            <span><?php echo $type_name; ?></span>
+                            <select name="<?php echo $prefix; ?>[special_tag]" style="padding:4px 8px; border:1px solid #ddd; border-radius:4px; background:#fff; font-size:12px; color:#666;">
+                                <option value="">无标记</option>
+                                <option value="补货" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '补货') ? 'selected' : ''; ?>>📦 补货</option>
+                                <option value="加班" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '加班') ? 'selected' : ''; ?>>⏰ 加班</option>
+                                <option value="培训" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '培训') ? 'selected' : ''; ?>>📚 培训</option>
+                                <option value="盘点" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '盘点') ? 'selected' : ''; ?>>📋 盘点</option>
+                            </select>
                         </div>
 
                         <!-- 隐藏域: 记录ID, 方便后端判断是更新还是插入 -->
@@ -1212,6 +1220,7 @@ function view_monthly_report($year, $month, $data) {
                                     $end_monitor = $rec['end_time_monitor'] ?? '';
                                     $is_closing = $rec['is_end_at_closing'] ?? 0;
                                     $record_id = $rec['id'] ?? null;
+                                    $special_tag = $rec['special_tag'] ?? '';
 
                                     // 计算实际时间
                                     $start_real = $start_monitor ? calc_display_time($start_monitor, $offset) : '';
@@ -1243,7 +1252,22 @@ function view_monthly_report($year, $month, $data) {
                                     $has_cal_image = ($shift === 'am' && !empty($cal['calibration_image']));
                                 ?>
                                 <td style="border:1px solid #ddd; padding:6px; font-size:11px; font-family:monospace;">
-                                    <?php if ($display_start || $display_end): ?>
+                                    <?php if ($display_start || $display_end || $special_tag): ?>
+                                        <?php if ($special_tag): ?>
+                                            <div style="margin-bottom:4px; text-align:center;">
+                                                <span style="background:#ff9800; color:#fff; padding:2px 6px; border-radius:3px; font-size:9px; font-weight:bold; display:inline-block;">
+                                                    <?php
+                                                    $tag_emoji = [
+                                                        '补货' => '📦',
+                                                        '加班' => '⏰',
+                                                        '培训' => '📚',
+                                                        '盘点' => '📋'
+                                                    ];
+                                                    echo ($tag_emoji[$special_tag] ?? '') . ' ' . $special_tag;
+                                                    ?>
+                                                </span>
+                                            </div>
+                                        <?php endif; ?>
                                         <div style="margin-bottom:2px;">
                                             <span style="color:#28a745;">上:</span>
                                             <?php echo $display_start ?: '<span style="color:#ccc;">--</span>'; ?>
@@ -1289,6 +1313,7 @@ function view_monthly_report($year, $month, $data) {
                 <li><span style="color:#28a745;">上:</span> 表示上班时间，<span style="color:#dc3545;">下:</span> 表示下班时间</li>
                 <li>"营业结束"表示该班次工作至营业结束时间</li>
                 <li>🎥 表示该时间点有视频记录，📷 表示有校准图片</li>
+                <li>橙色标签显示特殊标记（如 📦 补货、⏰ 加班、📚 培训、📋 盘点），可在日常记录页面设置</li>
             </ul>
         </div>
     </div>
