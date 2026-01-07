@@ -1416,6 +1416,104 @@ function view_monthly_report($year, $month, $data) {
             </div>
         </div>
 
+        <!-- 按人员统计 -->
+        <div style="margin-top: 20px; padding: 15px; background: #fff; border-radius: 8px; font-size: 13px; font-family: monospace;">
+            <div style="font-weight: bold; margin-bottom: 15px; font-size: 16px; font-family: sans-serif; color: #333;">📋 按人员统计</div>
+            <?php foreach ($staff_list as $staff):
+                // 为不同员工定义颜色
+                $staff_colors_map = [
+                    'YI' => '#28a745',      // 绿色
+                    'JIAN' => '#fd7e14',    // 橙色
+                    'IRE' => '#e83e8c'      // 粉色
+                ];
+                $staff_color = $staff_colors_map[$staff] ?? '#007bff';
+            ?>
+                <div style="margin-bottom: 20px;">
+                    <div style="font-weight: bold; font-size: 14px; color: <?php echo $staff_color; ?>; border-bottom: 2px solid <?php echo $staff_color; ?>; padding-bottom: 5px; margin-bottom: 10px;">
+                        ===== <?php echo $staff; ?> =====
+                    </div>
+                    <div style="line-height: 1.8;">
+                        <?php foreach ($data['dates'] as $date):
+                            $cal = $data['cal_map'][$date] ?? null;
+                            $offset = $cal['time_offset_seconds'] ?? 0;
+                            $day_of_week = date('w', strtotime($date));
+                            $week_names = ['日','一','二','三','四','五','六'];
+
+                            // 获取上午班和下午班的记录
+                            $am_rec = $data['records_map'][$date][$staff]['am'] ?? null;
+                            $pm_rec = $data['records_map'][$date][$staff]['pm'] ?? null;
+
+                            // 判断是否有校准
+                            $has_calibration = ($cal !== null && $offset != 0);
+
+                            // 格式化上午班时间
+                            $am_start_monitor = $am_rec['start_time_monitor'] ?? '';
+                            $am_end_monitor = $am_rec['end_time_monitor'] ?? '';
+                            $am_is_closing = $am_rec['is_end_at_closing'] ?? 0;
+
+                            if ($has_calibration) {
+                                $am_start = $am_start_monitor ? calc_display_time($am_start_monitor, $offset) : '';
+                                $am_end = $am_is_closing ? '营业结束' : ($am_end_monitor ? calc_display_time($am_end_monitor, $offset) : '');
+                            } else {
+                                $am_start = $am_start_monitor;
+                                $am_end = $am_is_closing ? '营业结束' : $am_end_monitor;
+                            }
+
+                            // 格式化上午班显示
+                            if ($am_start && $am_end) {
+                                $am_display = substr($am_start, 0, 5) . '-' . ($am_end === '营业结束' ? '营业结束' : substr($am_end, 0, 5));
+                            } elseif ($am_start) {
+                                $am_display = substr($am_start, 0, 5) . '-（缺失）';
+                            } elseif ($am_end) {
+                                $am_display = '（缺失）-' . ($am_end === '营业结束' ? '营业结束' : substr($am_end, 0, 5));
+                            } else {
+                                $am_display = '--';
+                            }
+
+                            // 格式化下午班时间
+                            $pm_start_monitor = $pm_rec['start_time_monitor'] ?? '';
+                            $pm_end_monitor = $pm_rec['end_time_monitor'] ?? '';
+                            $pm_is_closing = $pm_rec['is_end_at_closing'] ?? 0;
+
+                            if ($has_calibration) {
+                                $pm_start = $pm_start_monitor ? calc_display_time($pm_start_monitor, $offset) : '';
+                                $pm_end = $pm_is_closing ? '营业结束' : ($pm_end_monitor ? calc_display_time($pm_end_monitor, $offset) : '');
+                            } else {
+                                $pm_start = $pm_start_monitor;
+                                $pm_end = $pm_is_closing ? '营业结束' : $pm_end_monitor;
+                            }
+
+                            // 格式化下午班显示
+                            if ($pm_start && $pm_end) {
+                                $pm_display = substr($pm_start, 0, 5) . '-' . ($pm_end === '营业结束' ? '营业结束' : substr($pm_end, 0, 5));
+                            } elseif ($pm_start) {
+                                $pm_display = substr($pm_start, 0, 5) . '-（缺失）';
+                            } elseif ($pm_end) {
+                                $pm_display = '（缺失）-' . ($pm_end === '营业结束' ? '营业结束' : substr($pm_end, 0, 5));
+                            } else {
+                                $pm_display = '--';
+                            }
+
+                            // 只显示有记录的日期
+                            if ($am_display !== '--' || $pm_display !== '--'):
+                        ?>
+                            <div style="padding: 2px 0;">
+                                <a href="?action=day_view&date=<?php echo $date; ?>" style="text-decoration: none; color: #007bff;">
+                                    <?php echo date('m-d', strtotime($date)); ?> 周<?php echo $week_names[$day_of_week]; ?>
+                                </a>
+                                <span style="color: #666;">
+                                    &nbsp;&nbsp;上午: <?php echo $am_display; ?>
+                                    &nbsp;&nbsp;下午: <?php echo $pm_display; ?>
+                                </span>
+                            </div>
+                        <?php
+                            endif;
+                        endforeach; ?>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+
         <div style="margin-top: 15px; padding: 10px; background: #fff; border-radius: 8px; font-size: 12px; color: #666;">
             <div style="font-weight: bold; margin-bottom: 8px;">说明：</div>
             <ul style="margin: 0; padding-left: 20px;">
