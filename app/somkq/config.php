@@ -39,6 +39,9 @@ return [
     // 图片上传物理目录 (无末尾斜杠)
     'path_image_upload' => __DIR__ . '/../../dc_html/somkq/uploads/images',
 
+    // 图片归档目录 (无末尾斜杠)
+    'path_image_archive' => __DIR__ . '/../../dc_html/somkq/uploads/images/archived',
+
     // -------------------------
     // URL 配置 (用于前端访问)
     // -------------------------

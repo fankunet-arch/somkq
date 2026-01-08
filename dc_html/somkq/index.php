@@ -263,6 +263,32 @@ function handle_save_day_all($pdo, $config) {
             if ($file['error'] === UPLOAD_ERR_OK) {
                 $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
                 if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp'])) {
+                    // 查询是否已有旧照片
+                    $stmt = $pdo->prepare("SELECT calibration_image FROM somkq_daily_calibration WHERE cal_date = ?");
+                    $stmt->execute([$date]);
+                    $old_image = $stmt->fetchColumn();
+
+                    // 如果有旧照片，移动到归档目录
+                    if ($old_image) {
+                        $old_image_path = $config['path_image_upload'] . '/' . $old_image;
+                        if (file_exists($old_image_path)) {
+                            $archive_dir = $config['path_image_archive'];
+
+                            // 确保归档目录存在
+                            if (!is_dir($archive_dir)) {
+                                mkdir($archive_dir, 0777, true);
+                            }
+
+                            // 生成归档文件名，添加时间戳避免冲突
+                            $archive_filename = pathinfo($old_image, PATHINFO_FILENAME) . '_archived_' . time() . '.' . pathinfo($old_image, PATHINFO_EXTENSION);
+                            $archive_path = $archive_dir . '/' . $archive_filename;
+
+                            // 移动旧照片到归档目录
+                            rename($old_image_path, $archive_path);
+                        }
+                    }
+
+                    // 保存新照片
                     $filename = $date . '_' . uniqid() . '.' . $ext;
                     $target_dir = $config['path_image_upload'];
 
