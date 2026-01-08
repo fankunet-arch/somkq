@@ -1232,27 +1232,25 @@ function view_day_detail($date, $data) {
                         <!-- 特殊标记 (移到下班区域底部) -->
                         <?php if ($is_admin): ?>
                         <div style="margin-top:15px; padding:12px; background:#fff; border-radius:6px; border:1px solid #ddd;">
-                            <label style="font-size:13px; color:#666; font-weight:bold; display:block; margin-bottom:8px;">班次特殊标记</label>
-                            <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                                <?php foreach ($data['staff_data'] as $staff_name => $shifts):
-                                    $rec = $shifts[$type_key]['record'];
-                                    $prefix = "shifts[$staff_name][$type_key]";
-                                    $staff_color = $staff_colors[$staff_name] ?? ['text' => '#666'];
-                                ?>
-                                <div style="flex:1; min-width:150px;">
-                                    <label style="font-size:12px; color:<?php echo $staff_color['text']; ?>; font-weight:bold; display:block; margin-bottom:4px;">
-                                        <?php echo $staff_name; ?>
-                                    </label>
-                                    <select name="<?php echo $prefix; ?>[special_tag]" style="width:100%; padding:6px 8px; border:1px solid #ddd; border-radius:4px; background:#fff; font-size:12px; color:#666;">
-                                        <option value="">无标记</option>
-                                        <option value="补货" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '补货') ? 'selected' : ''; ?>>📦 补货</option>
-                                        <option value="加班" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '加班') ? 'selected' : ''; ?>>⏰ 加班</option>
-                                        <option value="培训" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '培训') ? 'selected' : ''; ?>>📚 培训</option>
-                                        <option value="盘点" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '盘点') ? 'selected' : ''; ?>>📋 盘点</option>
-                                    </select>
-                                </div>
-                                <?php endforeach; ?>
+                            <label style="font-size:13px; color:#666; font-weight:bold; display:block; margin-bottom:12px;">班次特殊标记</label>
+                            <?php foreach ($data['staff_data'] as $staff_name => $shifts):
+                                $rec = $shifts[$type_key]['record'];
+                                $prefix = "shifts[$staff_name][$type_key]";
+                                $staff_color = $staff_colors[$staff_name] ?? ['text' => '#666'];
+                            ?>
+                            <div style="margin-bottom:10px;">
+                                <label style="font-size:13px; color:<?php echo $staff_color['text']; ?>; font-weight:bold; display:block; margin-bottom:6px;">
+                                    👤 <?php echo $staff_name; ?>
+                                </label>
+                                <select name="<?php echo $prefix; ?>[special_tag]" style="width:100%; padding:10px 12px; border:2px solid <?php echo $staff_color['text']; ?>; border-radius:6px; background:#fff; font-size:14px; color:#333; -webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: url('data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2212%22%20height%3D%228%22%20viewBox%3D%220%200%2012%208%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M1%201l5%205%205-5%22%20stroke%3D%22%23666%22%20stroke-width%3D%222%22%20fill%3D%22none%22%2F%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px;">
+                                    <option value="">无标记</option>
+                                    <option value="补货" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '补货') ? 'selected' : ''; ?>>📦 补货</option>
+                                    <option value="加班" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '加班') ? 'selected' : ''; ?>>⏰ 加班</option>
+                                    <option value="培训" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '培训') ? 'selected' : ''; ?>>📚 培训</option>
+                                    <option value="盘点" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '盘点') ? 'selected' : ''; ?>>📋 盘点</option>
+                                </select>
                             </div>
+                            <?php endforeach; ?>
                         </div>
                         <?php else: ?>
                             <?php
