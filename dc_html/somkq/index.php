@@ -1126,100 +1126,165 @@ function view_day_detail($date, $data) {
                 </div>
             </div>
 
-            <!-- 员工班次卡片 -->
+            <!-- 班次卡片 (按班次组织) -->
             <?php
-            // 为每个员工定义淡色背景
+            // 为每个员工定义颜色标识
             $staff_colors = [
-                'YI' => ['bg' => '#e8f5e9', 'header' => '#c8e6c9'],      // 淡绿色
-                'JIAN' => ['bg' => '#f5f5dc', 'header' => '#e6e6c8'],    // 浅土色(米色)
-                'IRE' => ['bg' => '#fce4ec', 'header' => '#f8bbd0']      // 淡粉色
+                'YI' => ['bg' => '#e8f5e9', 'text' => '#2e7d32'],      // 绿色系
+                'JIAN' => ['bg' => '#fff8e1', 'text' => '#f57f17'],    // 黄色系
+                'IRE' => ['bg' => '#fce4ec', 'text' => '#c2185b']      // 粉色系
             ];
 
-            foreach ($data['staff_data'] as $staff_name => $shifts):
-                $colors = $staff_colors[$staff_name] ?? ['bg' => '#f8f9fa', 'header' => '#e9ecef'];
+            // 班次颜色
+            $shift_colors = [
+                'am' => ['bg' => '#e3f2fd', 'header' => '#90caf9'],    // 淡蓝色 (上午)
+                'pm' => ['bg' => '#fff3e0', 'header' => '#ffcc80']     // 淡橙色 (下午)
+            ];
+
+            foreach(['am' => '上午班', 'pm' => '下午班'] as $type_key => $type_name):
+                $colors = $shift_colors[$type_key];
             ?>
             <div class="card" style="background:<?php echo $colors['bg']; ?>;">
                 <div class="card-header" style="background:<?php echo $colors['header']; ?>; border-bottom-color:<?php echo $colors['header']; ?>;">
-                    👤 <?php echo $staff_name; ?>
+                    <?php echo $type_key === 'am' ? '☀️' : '🌙'; ?> <?php echo $type_name; ?>
                 </div>
                 <div class="card-body" style="padding:0;">
-                    <?php foreach(['am' => '上午班', 'pm' => '下午班'] as $type_key => $type_name):
-                        $info = $shifts[$type_key];
-                        $rec = $info['record'];
-                        $record_id = $rec['id'] ?? '';
-                        $m_start = $rec['start_time_monitor'] ?? '';
-                        $m_end = $rec['end_time_monitor'] ?? '';
-                        $is_closing = $rec['is_end_at_closing'] ?? 0;
-                        $r_start = calc_display_time($m_start, $offset);
-                        $r_end = $is_closing ? '营业结束' : calc_display_time($m_end, $offset);
-
-                        $prefix = "shifts[$staff_name][$type_key]";
-                    ?>
-                    <div style="padding:15px; border-bottom:1px solid #eee;">
-                        <div style="font-weight:bold; margin-bottom:12px; font-size:16px; color:#444; display:flex; justify-content:space-between; align-items:center;">
-                            <span><?php echo $type_name; ?></span>
+                    <!-- 上班区域 -->
+                    <div style="padding:15px; border-bottom:2px solid #ddd; background:rgba(40, 167, 69, 0.05);">
+                        <div style="font-weight:bold; margin-bottom:15px; font-size:16px; color:#28a745; border-bottom:2px solid #28a745; padding-bottom:8px;">
+                            📥 上班打卡
+                        </div>
+                        <?php foreach ($data['staff_data'] as $staff_name => $shifts):
+                            $info = $shifts[$type_key];
+                            $rec = $info['record'];
+                            $record_id = $rec['id'] ?? '';
+                            $m_start = $rec['start_time_monitor'] ?? '';
+                            $r_start = calc_display_time($m_start, $offset);
+                            $prefix = "shifts[$staff_name][$type_key]";
+                            $staff_color = $staff_colors[$staff_name] ?? ['bg' => '#f5f5f5', 'text' => '#666'];
+                        ?>
+                        <div style="padding:12px; margin-bottom:12px; border-left:4px solid <?php echo $staff_color['text']; ?>; background:<?php echo $staff_color['bg']; ?>; border-radius:4px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                <span style="font-weight:bold; color:<?php echo $staff_color['text']; ?>; font-size:15px;">
+                                    👤 <?php echo $staff_name; ?>
+                                </span>
+                                <span class="real-time-display" data-source="<?php echo "{$staff_name}_{$type_key}_start"; ?>" style="font-family:monospace; color:#28a745; font-size:13px;">
+                                    实: <?php echo $r_start ?: '--:--'; ?>
+                                </span>
+                            </div>
                             <?php if ($is_admin): ?>
-                                <select name="<?php echo $prefix; ?>[special_tag]" style="padding:4px 8px; border:1px solid #ddd; border-radius:4px; background:#fff; font-size:12px; color:#666;">
+                                <div style="margin-bottom:8px;">
+                                    <label style="font-size:12px; color:#666; display:block; margin-bottom:4px;">监控时间</label>
+                                    <?php view_time_input_visual($prefix . '[start_time]', $m_start, "{$staff_name}_{$type_key}_start"); ?>
+                                </div>
+                            <?php else: ?>
+                                <div style="padding:8px; background:#fff; border-radius:4px; font-family:monospace; color:#333; margin-bottom:8px;">
+                                    监控: <?php echo $m_start ?: '未设置'; ?>
+                                </div>
+                            <?php endif; ?>
+                            <?php view_video_grid($date, $staff_name, $type_key, 'start', $info['videos_start'], $record_id, $config, $is_admin); ?>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <!-- 下班区域 -->
+                    <div style="padding:15px; background:rgba(220, 53, 69, 0.05);">
+                        <div style="font-weight:bold; margin-bottom:15px; font-size:16px; color:#dc3545; border-bottom:2px solid #dc3545; padding-bottom:8px;">
+                            📤 下班打卡
+                        </div>
+                        <?php foreach ($data['staff_data'] as $staff_name => $shifts):
+                            $info = $shifts[$type_key];
+                            $rec = $info['record'];
+                            $record_id = $rec['id'] ?? '';
+                            $m_end = $rec['end_time_monitor'] ?? '';
+                            $is_closing = $rec['is_end_at_closing'] ?? 0;
+                            $r_end = $is_closing ? '营业结束' : calc_display_time($m_end, $offset);
+                            $prefix = "shifts[$staff_name][$type_key]";
+                            $staff_color = $staff_colors[$staff_name] ?? ['bg' => '#f5f5f5', 'text' => '#666'];
+                        ?>
+                        <div style="padding:12px; margin-bottom:12px; border-left:4px solid <?php echo $staff_color['text']; ?>; background:<?php echo $staff_color['bg']; ?>; border-radius:4px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                <span style="font-weight:bold; color:<?php echo $staff_color['text']; ?>; font-size:15px;">
+                                    👤 <?php echo $staff_name; ?>
+                                </span>
+                                <span class="real-time-display" data-source="<?php echo "{$staff_name}_{$type_key}_end"; ?>" style="font-family:monospace; color:#dc3545; font-size:13px;">
+                                    实: <?php echo $r_end ?: '--:--'; ?>
+                                </span>
+                            </div>
+                            <?php if ($is_admin): ?>
+                                <div style="margin-bottom:8px;">
+                                    <label style="font-size:12px; color:#666; display:block; margin-bottom:4px;">监控时间</label>
+                                    <?php view_time_input_visual($prefix . '[end_time]', $m_end, "{$staff_name}_{$type_key}_end"); ?>
+                                </div>
+                                <label class="closing-checkbox-label">
+                                    <input type="checkbox" name="<?php echo $prefix; ?>[is_end_at_closing]" class="is-closing-check" <?php echo $is_closing?'checked':''; ?>>
+                                    标记为"至营业结束"
+                                </label>
+                            <?php else: ?>
+                                <div style="padding:8px; background:#fff; border-radius:4px; font-family:monospace; color:#333; margin-bottom:8px;">
+                                    监控: <?php echo $is_closing ? '营业结束' : ($m_end ?: '未设置'); ?>
+                                </div>
+                            <?php endif; ?>
+                            <?php view_video_grid($date, $staff_name, $type_key, 'end', $info['videos_end'], $record_id, $config, $is_admin); ?>
+                        </div>
+                        <?php endforeach; ?>
+
+                        <!-- 特殊标记 (移到下班区域底部) -->
+                        <?php if ($is_admin): ?>
+                        <div style="margin-top:15px; padding:12px; background:#fff; border-radius:6px; border:1px solid #ddd;">
+                            <label style="font-size:13px; color:#666; font-weight:bold; display:block; margin-bottom:12px;">班次特殊标记</label>
+                            <?php foreach ($data['staff_data'] as $staff_name => $shifts):
+                                $rec = $shifts[$type_key]['record'];
+                                $prefix = "shifts[$staff_name][$type_key]";
+                                $staff_color = $staff_colors[$staff_name] ?? ['text' => '#666'];
+                            ?>
+                            <div style="margin-bottom:10px;">
+                                <label style="font-size:13px; color:<?php echo $staff_color['text']; ?>; font-weight:bold; display:block; margin-bottom:6px;">
+                                    👤 <?php echo $staff_name; ?>
+                                </label>
+                                <select name="<?php echo $prefix; ?>[special_tag]" style="width:100%; padding:10px 12px; border:2px solid <?php echo $staff_color['text']; ?>; border-radius:6px; background:#fff; font-size:14px; color:#333; -webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: url('data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2212%22%20height%3D%228%22%20viewBox%3D%220%200%2012%208%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M1%201l5%205%205-5%22%20stroke%3D%22%23666%22%20stroke-width%3D%222%22%20fill%3D%22none%22%2F%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px;">
                                     <option value="">无标记</option>
                                     <option value="补货" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '补货') ? 'selected' : ''; ?>>📦 补货</option>
                                     <option value="加班" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '加班') ? 'selected' : ''; ?>>⏰ 加班</option>
                                     <option value="培训" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '培训') ? 'selected' : ''; ?>>📚 培训</option>
                                     <option value="盘点" <?php echo (isset($rec['special_tag']) && $rec['special_tag'] === '盘点') ? 'selected' : ''; ?>>📋 盘点</option>
                                 </select>
-                            <?php else: ?>
-                                <?php if (!empty($rec['special_tag'])): ?>
-                                    <span style="background:#ff9800; color:#fff; padding:4px 8px; border-radius:4px; font-size:12px;">
-                                        <?php
-                                        $tag_emoji = ['补货' => '📦', '加班' => '⏰', '培训' => '📚', '盘点' => '📋'];
-                                        echo ($tag_emoji[$rec['special_tag']] ?? '') . ' ' . $rec['special_tag'];
-                                        ?>
-                                    </span>
-                                <?php endif; ?>
-                            <?php endif; ?>
-                        </div>
-
-                        <!-- 隐藏域: 记录ID, 方便后端判断是更新还是插入 -->
-                        <!-- 注意：统一保存模式下，后端主要根据 date+staff+shift_type 定位，record_id 辅助 -->
-
-                        <div class="action-section start">
-                            <div class="action-title">
-                                <span>上班 (监控)</span>
-                                <span class="real-time-display" data-source="<?php echo "{$staff_name}_{$type_key}_start"; ?>" style="font-weight:normal; font-family:monospace; color:#28a745;">
-                                    实: <?php echo $r_start ?: '--:--'; ?>
-                                </span>
                             </div>
-                            <?php if ($is_admin): ?>
-                                <?php view_time_input_visual($prefix . '[start_time]', $m_start, "{$staff_name}_{$type_key}_start"); ?>
-                            <?php else: ?>
-                                <div style="padding:8px; background:#f5f5f5; border-radius:4px; font-family:monospace; color:#333; margin-bottom:8px;">
-                                    <?php echo $m_start ?: '未设置'; ?>
-                                </div>
-                            <?php endif; ?>
-                            <?php view_video_grid($date, $staff_name, $type_key, 'start', $info['videos_start'], $record_id, $config, $is_admin); ?>
+                            <?php endforeach; ?>
                         </div>
-
-                        <div class="action-section end">
-                            <div class="action-title">
-                                <span>下班 (监控)</span>
-                                <span class="real-time-display" data-source="<?php echo "{$staff_name}_{$type_key}_end"; ?>" style="font-weight:normal; font-family:monospace; color:#dc3545;">
-                                    实: <?php echo $r_end ?: '--:--'; ?>
-                                </span>
+                        <?php else: ?>
+                            <?php
+                            // 只读模式：显示已设置的标记
+                            $has_tags = false;
+                            foreach ($data['staff_data'] as $staff_name => $shifts) {
+                                if (!empty($shifts[$type_key]['record']['special_tag'])) {
+                                    $has_tags = true;
+                                    break;
+                                }
+                            }
+                            if ($has_tags):
+                            ?>
+                            <div style="margin-top:15px; padding:12px; background:#fff; border-radius:6px; border:1px solid #ddd;">
+                                <label style="font-size:13px; color:#666; font-weight:bold; display:block; margin-bottom:8px;">班次特殊标记</label>
+                                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                    <?php foreach ($data['staff_data'] as $staff_name => $shifts):
+                                        $special_tag = $shifts[$type_key]['record']['special_tag'] ?? '';
+                                        if ($special_tag):
+                                            $tag_emoji = ['补货' => '📦', '加班' => '⏰', '培训' => '📚', '盘点' => '📋'];
+                                            $staff_color = $staff_colors[$staff_name] ?? ['text' => '#666'];
+                                    ?>
+                                        <span style="background:<?php echo $staff_color['text']; ?>; color:#fff; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:bold;">
+                                            <?php echo $staff_name; ?>: <?php echo ($tag_emoji[$special_tag] ?? '') . ' ' . $special_tag; ?>
+                                        </span>
+                                    <?php
+                                        endif;
+                                    endforeach;
+                                    ?>
+                                </div>
                             </div>
-                            <?php if ($is_admin): ?>
-                                <?php view_time_input_visual($prefix . '[end_time]', $m_end, "{$staff_name}_{$type_key}_end"); ?>
-                                <label class="closing-checkbox-label">
-                                    <input type="checkbox" name="<?php echo $prefix; ?>[is_end_at_closing]" class="is-closing-check" <?php echo $is_closing?'checked':''; ?>>
-                                    标记为"至营业结束"
-                                </label>
-                            <?php else: ?>
-                                <div style="padding:8px; background:#f5f5f5; border-radius:4px; font-family:monospace; color:#333; margin-bottom:8px;">
-                                    <?php echo $is_closing ? '营业结束' : ($m_end ?: '未设置'); ?>
-                                </div>
                             <?php endif; ?>
-                            <?php view_video_grid($date, $staff_name, $type_key, 'end', $info['videos_end'], $record_id, $config, $is_admin); ?>
-                        </div>
+                        <?php endif; ?>
                     </div>
-                    <?php endforeach; ?>
                 </div>
             </div>
             <?php endforeach; ?>
