@@ -1541,6 +1541,7 @@ function view_monthly_report($year, $month, $data) {
                             $am_start_monitor = $am_rec['start_time_monitor'] ?? '';
                             $am_end_monitor = $am_rec['end_time_monitor'] ?? '';
                             $am_is_closing = $am_rec['is_end_at_closing'] ?? 0;
+                            $am_special_tag = $am_rec['special_tag'] ?? '';
 
                             if ($has_calibration) {
                                 $am_start = $am_start_monitor ? calc_display_time($am_start_monitor, $offset) : '';
@@ -1561,10 +1562,23 @@ function view_monthly_report($year, $month, $data) {
                                 $am_display = '--';
                             }
 
+                            // 添加上午班特殊标记
+                            if ($am_special_tag) {
+                                $tag_emoji_map = [
+                                    '补货' => '📦',
+                                    '加班' => '⏰',
+                                    '培训' => '📚',
+                                    '盘点' => '📋'
+                                ];
+                                $am_tag_emoji = $tag_emoji_map[$am_special_tag] ?? '';
+                                $am_display .= ' [' . $am_tag_emoji . $am_special_tag . ']';
+                            }
+
                             // 格式化下午班时间
                             $pm_start_monitor = $pm_rec['start_time_monitor'] ?? '';
                             $pm_end_monitor = $pm_rec['end_time_monitor'] ?? '';
                             $pm_is_closing = $pm_rec['is_end_at_closing'] ?? 0;
+                            $pm_special_tag = $pm_rec['special_tag'] ?? '';
 
                             if ($has_calibration) {
                                 $pm_start = $pm_start_monitor ? calc_display_time($pm_start_monitor, $offset) : '';
@@ -1583,6 +1597,18 @@ function view_monthly_report($year, $month, $data) {
                                 $pm_display = '（缺失）-' . ($pm_end === '营业结束' ? '营业结束' : substr($pm_end, 0, 5));
                             } else {
                                 $pm_display = '--';
+                            }
+
+                            // 添加下午班特殊标记
+                            if ($pm_special_tag) {
+                                $tag_emoji_map = [
+                                    '补货' => '📦',
+                                    '加班' => '⏰',
+                                    '培训' => '📚',
+                                    '盘点' => '📋'
+                                ];
+                                $pm_tag_emoji = $tag_emoji_map[$pm_special_tag] ?? '';
+                                $pm_display .= ' [' . $pm_tag_emoji . $pm_special_tag . ']';
                             }
 
                             // 只显示有记录的日期
