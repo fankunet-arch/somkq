@@ -679,6 +679,49 @@ function view_header($title) {
             /* 登录页 */
             .login-box { padding: 30px 20px; background: #fff; border-radius: 12px; margin-top: 40px; }
             input.login-input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; margin-bottom: 20px; -webkit-appearance: none; }
+
+            /* 监控时间tooltip样式 */
+            .time-display {
+                position: relative;
+                display: inline-block;
+                cursor: pointer;
+            }
+            .time-tooltip {
+                position: absolute;
+                bottom: 100%;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(0, 0, 0, 0.85);
+                color: #fff;
+                padding: 6px 10px;
+                border-radius: 4px;
+                font-size: 11px;
+                white-space: nowrap;
+                opacity: 0;
+                visibility: hidden;
+                transition: opacity 0.15s, visibility 0.15s;
+                pointer-events: none;
+                z-index: 1000;
+                margin-bottom: 5px;
+            }
+            .time-tooltip::after {
+                content: '';
+                position: absolute;
+                top: 100%;
+                left: 50%;
+                transform: translateX(-50%);
+                border: 5px solid transparent;
+                border-top-color: rgba(0, 0, 0, 0.85);
+            }
+            .time-display:hover .time-tooltip,
+            .time-display.active .time-tooltip {
+                opacity: 1;
+                visibility: visible;
+            }
+            /* 无视频文件的时间显示为红色 */
+            .time-no-video {
+                color: #dc3545 !important;
+            }
         </style>
     </head>
     <body>
@@ -902,6 +945,29 @@ function view_footer() {
 
         // 初始计算一次
         calcRealTime();
+
+        // 处理时间tooltip的移动端点击事件
+        const timeDisplays = document.querySelectorAll('.time-display');
+        timeDisplays.forEach(timeDisplay => {
+            timeDisplay.addEventListener('click', function(e) {
+                e.stopPropagation();
+                // 移除其他所有active状态
+                document.querySelectorAll('.time-display.active').forEach(el => {
+                    if (el !== this) el.classList.remove('active');
+                });
+                // 切换当前元素的active状态
+                this.classList.toggle('active');
+            });
+        });
+
+        // 点击空白处关闭所有tooltip
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.time-display')) {
+                document.querySelectorAll('.time-display.active').forEach(el => {
+                    el.classList.remove('active');
+                });
+            }
+        });
     });
     </script>
     </body>
@@ -1475,7 +1541,10 @@ function view_monthly_report($year, $month, $data) {
                                         <div style="margin-bottom:2px;">
                                             <span style="color:#28a745;">上:</span>
                                             <?php if ($display_start): ?>
-                                                <span title="监控时间: <?php echo $start_monitor ?: '--'; ?>"><?php echo $display_start; ?></span>
+                                                <span class="time-display <?php echo !$has_start_video ? 'time-no-video' : ''; ?>">
+                                                    <?php echo $display_start; ?>
+                                                    <span class="time-tooltip">监控时间: <?php echo $start_monitor ?: '--'; ?></span>
+                                                </span>
                                             <?php else: ?>
                                                 <span style="color:#ccc;">--</span>
                                             <?php endif; ?>
@@ -1486,7 +1555,10 @@ function view_monthly_report($year, $month, $data) {
                                         <div>
                                             <span style="color:#dc3545;">下:</span>
                                             <?php if ($display_end): ?>
-                                                <span title="监控时间: <?php echo $is_closing ? '营业结束' : ($end_monitor ?: '--'); ?>"><?php echo $display_end; ?></span>
+                                                <span class="time-display <?php echo !$has_end_video ? 'time-no-video' : ''; ?>">
+                                                    <?php echo $display_end; ?>
+                                                    <span class="time-tooltip">监控时间: <?php echo $is_closing ? '营业结束' : ($end_monitor ?: '--'); ?></span>
+                                                </span>
                                             <?php else: ?>
                                                 <span style="color:#ccc;">--</span>
                                             <?php endif; ?>
