@@ -1474,14 +1474,22 @@ function view_monthly_report($year, $month, $data) {
                                         <?php endif; ?>
                                         <div style="margin-bottom:2px;">
                                             <span style="color:#28a745;">上:</span>
-                                            <?php echo $display_start ?: '<span style="color:#ccc;">--</span>'; ?>
+                                            <?php if ($display_start): ?>
+                                                <span title="监控时间: <?php echo $start_monitor ?: '--'; ?>"><?php echo $display_start; ?></span>
+                                            <?php else: ?>
+                                                <span style="color:#ccc;">--</span>
+                                            <?php endif; ?>
                                             <?php if ($has_start_video): ?>
                                                 <span style="color:#007bff; font-size:10px; margin-left:2px;" title="有视频记录">🎥</span>
                                             <?php endif; ?>
                                         </div>
                                         <div>
                                             <span style="color:#dc3545;">下:</span>
-                                            <?php echo $display_end ?: '<span style="color:#ccc;">--</span>'; ?>
+                                            <?php if ($display_end): ?>
+                                                <span title="监控时间: <?php echo $is_closing ? '营业结束' : ($end_monitor ?: '--'); ?>"><?php echo $display_end; ?></span>
+                                            <?php else: ?>
+                                                <span style="color:#ccc;">--</span>
+                                            <?php endif; ?>
                                             <?php if ($has_end_video): ?>
                                                 <span style="color:#007bff; font-size:10px; margin-left:2px;" title="有视频记录">🎥</span>
                                             <?php endif; ?>
@@ -1541,6 +1549,7 @@ function view_monthly_report($year, $month, $data) {
                             $am_start_monitor = $am_rec['start_time_monitor'] ?? '';
                             $am_end_monitor = $am_rec['end_time_monitor'] ?? '';
                             $am_is_closing = $am_rec['is_end_at_closing'] ?? 0;
+                            $am_special_tag = $am_rec['special_tag'] ?? '';
 
                             if ($has_calibration) {
                                 $am_start = $am_start_monitor ? calc_display_time($am_start_monitor, $offset) : '';
@@ -1561,10 +1570,23 @@ function view_monthly_report($year, $month, $data) {
                                 $am_display = '--';
                             }
 
+                            // 添加上午班特殊标记
+                            if ($am_special_tag) {
+                                $tag_emoji_map = [
+                                    '补货' => '📦',
+                                    '加班' => '⏰',
+                                    '培训' => '📚',
+                                    '盘点' => '📋'
+                                ];
+                                $am_tag_emoji = $tag_emoji_map[$am_special_tag] ?? '';
+                                $am_display .= ' [' . $am_tag_emoji . $am_special_tag . ']';
+                            }
+
                             // 格式化下午班时间
                             $pm_start_monitor = $pm_rec['start_time_monitor'] ?? '';
                             $pm_end_monitor = $pm_rec['end_time_monitor'] ?? '';
                             $pm_is_closing = $pm_rec['is_end_at_closing'] ?? 0;
+                            $pm_special_tag = $pm_rec['special_tag'] ?? '';
 
                             if ($has_calibration) {
                                 $pm_start = $pm_start_monitor ? calc_display_time($pm_start_monitor, $offset) : '';
@@ -1585,6 +1607,37 @@ function view_monthly_report($year, $month, $data) {
                                 $pm_display = '--';
                             }
 
+                            // 添加下午班特殊标记
+                            if ($pm_special_tag) {
+                                $tag_emoji_map = [
+                                    '补货' => '📦',
+                                    '加班' => '⏰',
+                                    '培训' => '📚',
+                                    '盘点' => '📋'
+                                ];
+                                $pm_tag_emoji = $tag_emoji_map[$pm_special_tag] ?? '';
+                                $pm_display .= ' [' . $pm_tag_emoji . $pm_special_tag . ']';
+                            }
+
+                            // 生成监控时间显示
+                            $am_monitor_display = '';
+                            if ($am_start_monitor && $am_end_monitor) {
+                                $am_monitor_display = substr($am_start_monitor, 0, 5) . '-' . ($am_is_closing ? '营业结束' : substr($am_end_monitor, 0, 5));
+                            } elseif ($am_start_monitor) {
+                                $am_monitor_display = substr($am_start_monitor, 0, 5) . '-（缺失）';
+                            } elseif ($am_end_monitor) {
+                                $am_monitor_display = '（缺失）-' . ($am_is_closing ? '营业结束' : substr($am_end_monitor, 0, 5));
+                            }
+
+                            $pm_monitor_display = '';
+                            if ($pm_start_monitor && $pm_end_monitor) {
+                                $pm_monitor_display = substr($pm_start_monitor, 0, 5) . '-' . ($pm_is_closing ? '营业结束' : substr($pm_end_monitor, 0, 5));
+                            } elseif ($pm_start_monitor) {
+                                $pm_monitor_display = substr($pm_start_monitor, 0, 5) . '-（缺失）';
+                            } elseif ($pm_end_monitor) {
+                                $pm_monitor_display = '（缺失）-' . ($pm_is_closing ? '营业结束' : substr($pm_end_monitor, 0, 5));
+                            }
+
                             // 只显示有记录的日期
                             if ($am_display !== '--' || $pm_display !== '--'):
                         ?>
@@ -1594,7 +1647,13 @@ function view_monthly_report($year, $month, $data) {
                                 </a>
                                 <span style="color: #666;">
                                     &nbsp;&nbsp;上午: <?php echo $am_display; ?>
+                                    <?php if ($am_monitor_display && $has_calibration): ?>
+                                        <span style="color: #999; font-size: 11px;"> (监控: <?php echo $am_monitor_display; ?>)</span>
+                                    <?php endif; ?>
                                     &nbsp;&nbsp;下午: <?php echo $pm_display; ?>
+                                    <?php if ($pm_monitor_display && $has_calibration): ?>
+                                        <span style="color: #999; font-size: 11px;"> (监控: <?php echo $pm_monitor_display; ?>)</span>
+                                    <?php endif; ?>
                                 </span>
                             </div>
                         <?php
@@ -1611,6 +1670,12 @@ function view_monthly_report($year, $month, $data) {
                 <li><strong>点击日期</strong>可以跳转到当天的详细记录页面</li>
                 <li>使用顶部的<strong>年份和月份选择器</strong>可以快速跳转到任意月份，或使用 ◀ ▶ 按钮逐月浏览</li>
                 <li>显示时间优先级：如果当天有校准数据，显示<strong>实际时间</strong>；否则显示<strong>监控时间</strong>并标注"(监控)"</li>
+                <li><strong>监控时间查看：</strong>
+                    <ul style="margin-top: 5px;">
+                        <li>在<strong>月度考勤总表</strong>中，将鼠标悬停在时间上可查看监控时间</li>
+                        <li>在<strong>按人员统计</strong>中，有校准的日期会在时间后显示监控时间</li>
+                    </ul>
+                </li>
                 <li>周末行以浅黄色背景显示</li>
                 <li><span style="color:#28a745;">上:</span> 表示上班时间，<span style="color:#dc3545;">下:</span> 表示下班时间</li>
                 <li>"营业结束"表示该班次工作至营业结束时间</li>
