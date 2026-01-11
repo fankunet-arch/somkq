@@ -227,6 +227,7 @@ function handle_save_shift($pdo) {
     $start = get_post_time('start_time_monitor');
     $end = get_post_time('end_time_monitor');
     $is_closing = isset($_POST['is_end_at_closing']) ? 1 : 0;
+    $is_absent = isset($_POST['is_absent']) ? 1 : 0;
 
     if (empty($id)) {
         $stmt = $pdo->prepare("SELECT id FROM somkq_shift_records WHERE record_date=? AND staff_name=? AND shift_type=?");
@@ -236,11 +237,11 @@ function handle_save_shift($pdo) {
     }
 
     if ($id) {
-        $stmt = $pdo->prepare("UPDATE somkq_shift_records SET start_time_monitor=?, end_time_monitor=?, is_end_at_closing=? WHERE id=?");
-        $stmt->execute([$start, $end, $is_closing, $id]);
+        $stmt = $pdo->prepare("UPDATE somkq_shift_records SET start_time_monitor=?, end_time_monitor=?, is_end_at_closing=?, is_absent=? WHERE id=?");
+        $stmt->execute([$start, $end, $is_closing, $is_absent, $id]);
     } else {
-        $stmt = $pdo->prepare("INSERT INTO somkq_shift_records (record_date, staff_name, shift_type, start_time_monitor, end_time_monitor, is_end_at_closing) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$date, $staff, $shift, $start, $end, $is_closing]);
+        $stmt = $pdo->prepare("INSERT INTO somkq_shift_records (record_date, staff_name, shift_type, start_time_monitor, end_time_monitor, is_end_at_closing, is_absent) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$date, $staff, $shift, $start, $end, $is_closing, $is_absent]);
     }
 
     header("Location: ?action=day_view&date=$date");
@@ -341,6 +342,7 @@ function handle_save_day_all($pdo, $config) {
                 $start = get_post_time_from_array($data['start_time'] ?? []);
                 $end = get_post_time_from_array($data['end_time'] ?? []);
                 $is_closing = isset($data['is_end_at_closing']) ? 1 : 0;
+                $is_absent = isset($data['is_absent']) ? 1 : 0;
                 $special_tag = isset($data['special_tag']) && !empty($data['special_tag']) ? $data['special_tag'] : null;
 
                 // 查找现有记录 ID
@@ -349,13 +351,13 @@ function handle_save_day_all($pdo, $config) {
                 $existing_id = $stmt->fetchColumn();
 
                 if ($existing_id) {
-                    $stmt = $pdo->prepare("UPDATE somkq_shift_records SET start_time_monitor=?, end_time_monitor=?, is_end_at_closing=?, special_tag=? WHERE id=?");
-                    $stmt->execute([$start, $end, $is_closing, $special_tag, $existing_id]);
+                    $stmt = $pdo->prepare("UPDATE somkq_shift_records SET start_time_monitor=?, end_time_monitor=?, is_end_at_closing=?, is_absent=?, special_tag=? WHERE id=?");
+                    $stmt->execute([$start, $end, $is_closing, $is_absent, $special_tag, $existing_id]);
                 } else {
                     // 只有当有数据输入时才插入新记录
-                    if ($start || $end || $is_closing || $special_tag) {
-                        $stmt = $pdo->prepare("INSERT INTO somkq_shift_records (record_date, staff_name, shift_type, start_time_monitor, end_time_monitor, is_end_at_closing, special_tag) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                        $stmt->execute([$date, $staff, $shift_type, $start, $end, $is_closing, $special_tag]);
+                    if ($start || $end || $is_closing || $is_absent || $special_tag) {
+                        $stmt = $pdo->prepare("INSERT INTO somkq_shift_records (record_date, staff_name, shift_type, start_time_monitor, end_time_monitor, is_end_at_closing, is_absent, special_tag) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->execute([$date, $staff, $shift_type, $start, $end, $is_closing, $is_absent, $special_tag]);
                     }
                 }
             }
@@ -875,6 +877,16 @@ function view_header($title) {
             }
             .closing-checkbox-label input { margin-right: 8px; transform: scale(1.2); }
 
+            /* --- 未在岗位复选框强化 --- */
+            .absent-checkbox-label {
+                display: flex; align-items: center;
+                transition: background 0.2s;
+            }
+            .absent-checkbox-label:hover {
+                background: #fff9e6 !important;
+            }
+            .absent-checkbox-label input { margin-right: 4px; transform: scale(1.2); cursor: pointer; }
+
             /* --- 方块上传按钮 --- */
             .media-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
             .media-item { position: relative; padding-top: 100%; background: #f0f0f0; border-radius: 8px; overflow: hidden; border: 1px solid #eee; }
@@ -1070,6 +1082,58 @@ function view_footer() {
             toggleClosingState(cb); // 初始化
             cb.addEventListener('change', function() {
                 toggleClosingState(this);
+            });
+        });
+
+        // 4. "未在岗位出现过" 勾选联动逻辑
+        function toggleAbsentState(checkbox) {
+            const staff = checkbox.dataset.staff;
+            const shift = checkbox.dataset.shift;
+
+            // 查找该员工该班次的所有区域
+            const card = checkbox.closest('.card');
+            const attendanceSection = checkbox.closest('div').querySelector('.attendance-section');
+
+            // 查找上班和下班区域的时间输入框和实时显示
+            const allTimeWrappers = card.querySelectorAll('.time-box-wrapper');
+            const allRealTimeDisplays = card.querySelectorAll('.real-time-display[data-source^="' + staff + '_' + shift + '"]');
+
+            if (checkbox.checked) {
+                // 禁用所有时间输入
+                allTimeWrappers.forEach(wrapper => {
+                    wrapper.classList.add('disabled');
+                    wrapper.querySelectorAll('input').forEach(inp => inp.disabled = true);
+                });
+                // 更新所有实时显示
+                allRealTimeDisplays.forEach(display => {
+                    display.textContent = '实: 未在岗';
+                    display.style.color = '#dc3545';
+                });
+                // 隐藏整个出勤区域
+                if (attendanceSection) {
+                    attendanceSection.style.opacity = '0.5';
+                    attendanceSection.style.pointerEvents = 'none';
+                }
+            } else {
+                // 恢复所有时间输入
+                allTimeWrappers.forEach(wrapper => {
+                    wrapper.classList.remove('disabled');
+                    wrapper.querySelectorAll('input').forEach(inp => inp.disabled = false);
+                });
+                // 恢复整个出勤区域
+                if (attendanceSection) {
+                    attendanceSection.style.opacity = '1';
+                    attendanceSection.style.pointerEvents = 'auto';
+                }
+                calcRealTime(); // 恢复时重新计算
+            }
+        }
+
+        // 初始化所有"未在岗位"checkbox 状态
+        document.querySelectorAll('.is-absent-check').forEach(cb => {
+            toggleAbsentState(cb); // 初始化
+            cb.addEventListener('change', function() {
+                toggleAbsentState(this);
             });
         });
 
@@ -1450,6 +1514,7 @@ function view_day_detail($date, $data) {
                             $record_id = $rec['id'] ?? '';
                             $m_start = $rec['start_time_monitor'] ?? '';
                             $r_start = calc_display_time($m_start, $offset);
+                            $is_absent = $rec['is_absent'] ?? 0;
                             $prefix = "shifts[$staff_name][$type_key]";
                             $staff_color = $staff_colors[$staff_name] ?? ['bg' => '#f5f5f5', 'text' => '#666'];
                         ?>
@@ -1463,13 +1528,27 @@ function view_day_detail($date, $data) {
                                 </span>
                             </div>
                             <?php if ($is_admin): ?>
-                                <div style="margin-bottom:8px;">
-                                    <label style="font-size:12px; color:#666; display:block; margin-bottom:4px;">监控时间</label>
-                                    <?php view_time_input_visual($prefix . '[start_time]', $m_start, "{$staff_name}_{$type_key}_start"); ?>
-                                </div>
+                                <label class="absent-checkbox-label" style="display:block; margin-bottom:12px; padding:8px; background:#fff3cd; border-left:3px solid #ffc107; border-radius:4px; cursor:pointer;">
+                                    <input type="checkbox" name="<?php echo $prefix; ?>[is_absent]" class="is-absent-check" data-staff="<?php echo $staff_name; ?>" data-shift="<?php echo $type_key; ?>" <?php echo $is_absent?'checked':''; ?>>
+                                    <span style="font-size:13px; color:#856404; font-weight:bold; margin-left:4px;">❌ 未在岗位出现过</span>
+                                </label>
+                                <div class="attendance-section">
+                                    <div style="margin-bottom:8px;">
+                                        <label style="font-size:12px; color:#666; display:block; margin-bottom:4px;">监控时间</label>
+                                        <?php view_time_input_visual($prefix . '[start_time]', $m_start, "{$staff_name}_{$type_key}_start"); ?>
+                                    </div>
                             <?php else: ?>
-                                <div style="padding:8px; background:#fff; border-radius:4px; font-family:monospace; color:#333; margin-bottom:8px;">
-                                    监控: <?php echo $m_start ?: '未设置'; ?>
+                                <?php if ($is_absent): ?>
+                                    <div style="padding:10px; background:#fff3cd; border-left:3px solid #ffc107; border-radius:4px; margin-bottom:8px;">
+                                        <span style="font-size:13px; color:#856404; font-weight:bold;">❌ 未在岗位出现过</span>
+                                    </div>
+                                <?php else: ?>
+                                    <div style="padding:8px; background:#fff; border-radius:4px; font-family:monospace; color:#333; margin-bottom:8px;">
+                                        监控: <?php echo $m_start ?: '未设置'; ?>
+                                    </div>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                            <?php if ($is_admin): ?>
                                 </div>
                             <?php endif; ?>
                             <?php view_video_grid($date, $staff_name, $type_key, 'start', $info['videos_start'], $record_id, $config, $is_admin); ?>
@@ -1679,6 +1758,7 @@ function view_monthly_report($year, $month, $data) {
                                     $start_monitor = $rec['start_time_monitor'] ?? '';
                                     $end_monitor = $rec['end_time_monitor'] ?? '';
                                     $is_closing = $rec['is_end_at_closing'] ?? 0;
+                                    $is_absent = $rec['is_absent'] ?? 0;
                                     $record_id = $rec['id'] ?? null;
                                     $special_tag = $rec['special_tag'] ?? '';
 
@@ -1736,12 +1816,21 @@ function view_monthly_report($year, $month, $data) {
 
                                     // 单元格样式
                                     $cell_style = 'border:1px solid #ddd; padding:6px; font-size:11px; font-family:monospace;';
-                                    if ($has_incomplete_record) {
+                                    if ($is_absent) {
+                                        // 未在岗位出现过：灰色背景
+                                        $cell_style = 'border:2px solid #999; padding:5px; font-size:11px; font-family:monospace; background:#f0f0f0; position:relative;';
+                                    } elseif ($has_incomplete_record) {
                                         $cell_style = "border:3px solid $warning_color; padding:4px; font-size:11px; font-family:monospace; background:#fff3cd; position:relative;";
                                     }
                                 ?>
                                 <td style="<?php echo $cell_style; ?>">
-                                    <?php if ($display_start || $display_end || $special_tag): ?>
+                                    <?php if ($is_absent): ?>
+                                        <!-- 未在岗位出现过 -->
+                                        <div style="text-align:center; padding:8px 0;">
+                                            <span style="color:#666; font-size:11px; font-weight:bold; display:block; margin-bottom:2px;">❌ 未在岗</span>
+                                            <span style="color:#999; font-size:9px;">(未出现)</span>
+                                        </div>
+                                    <?php elseif ($display_start || $display_end || $special_tag): ?>
                                         <?php if ($has_incomplete_record): ?>
                                             <div style="position:absolute; top:2px; right:2px;">
                                                 <span style="color:<?php echo $warning_color; ?>; font-size:14px; font-weight:bold;" title="<?php echo $incomplete_type === 'missing_end' ? '缺少下班时间' : '缺少上班时间'; ?>">⚠️</span>
@@ -1845,93 +1934,107 @@ function view_monthly_report($year, $month, $data) {
                             $am_start_monitor = $am_rec['start_time_monitor'] ?? '';
                             $am_end_monitor = $am_rec['end_time_monitor'] ?? '';
                             $am_is_closing = $am_rec['is_end_at_closing'] ?? 0;
+                            $am_is_absent = $am_rec['is_absent'] ?? 0;
                             $am_special_tag = $am_rec['special_tag'] ?? '';
 
-                            if ($has_calibration) {
-                                $am_start = $am_start_monitor ? calc_display_time($am_start_monitor, $offset) : '';
-                                $am_end = $am_is_closing ? '营业结束' : ($am_end_monitor ? calc_display_time($am_end_monitor, $offset) : '');
+                            if ($am_is_absent) {
+                                $am_display = '❌未在岗';
                             } else {
-                                $am_start = $am_start_monitor;
-                                $am_end = $am_is_closing ? '营业结束' : $am_end_monitor;
-                            }
+                                if ($has_calibration) {
+                                    $am_start = $am_start_monitor ? calc_display_time($am_start_monitor, $offset) : '';
+                                    $am_end = $am_is_closing ? '营业结束' : ($am_end_monitor ? calc_display_time($am_end_monitor, $offset) : '');
+                                } else {
+                                    $am_start = $am_start_monitor;
+                                    $am_end = $am_is_closing ? '营业结束' : $am_end_monitor;
+                                }
 
-                            // 格式化上午班显示
-                            if ($am_start && $am_end) {
-                                $am_display = substr($am_start, 0, 5) . '-' . ($am_end === '营业结束' ? '营业结束' : substr($am_end, 0, 5));
-                            } elseif ($am_start) {
-                                $am_display = substr($am_start, 0, 5) . '-（缺失）';
-                            } elseif ($am_end) {
-                                $am_display = '（缺失）-' . ($am_end === '营业结束' ? '营业结束' : substr($am_end, 0, 5));
-                            } else {
-                                $am_display = '--';
-                            }
+                                // 格式化上午班显示
+                                if ($am_start && $am_end) {
+                                    $am_display = substr($am_start, 0, 5) . '-' . ($am_end === '营业结束' ? '营业结束' : substr($am_end, 0, 5));
+                                } elseif ($am_start) {
+                                    $am_display = substr($am_start, 0, 5) . '-（缺失）';
+                                } elseif ($am_end) {
+                                    $am_display = '（缺失）-' . ($am_end === '营业结束' ? '营业结束' : substr($am_end, 0, 5));
+                                } else {
+                                    $am_display = '--';
+                                }
 
-                            // 添加上午班特殊标记
-                            if ($am_special_tag) {
-                                $tag_emoji_map = [
-                                    '补货' => '📦',
-                                    '加班' => '⏰',
-                                    '培训' => '📚',
-                                    '盘点' => '📋'
-                                ];
-                                $am_tag_emoji = $tag_emoji_map[$am_special_tag] ?? '';
-                                $am_display .= ' [' . $am_tag_emoji . $am_special_tag . ']';
+                                // 添加上午班特殊标记
+                                if ($am_special_tag) {
+                                    $tag_emoji_map = [
+                                        '补货' => '📦',
+                                        '加班' => '⏰',
+                                        '培训' => '📚',
+                                        '盘点' => '📋'
+                                    ];
+                                    $am_tag_emoji = $tag_emoji_map[$am_special_tag] ?? '';
+                                    $am_display .= ' [' . $am_tag_emoji . $am_special_tag . ']';
+                                }
                             }
 
                             // 格式化下午班时间
                             $pm_start_monitor = $pm_rec['start_time_monitor'] ?? '';
                             $pm_end_monitor = $pm_rec['end_time_monitor'] ?? '';
                             $pm_is_closing = $pm_rec['is_end_at_closing'] ?? 0;
+                            $pm_is_absent = $pm_rec['is_absent'] ?? 0;
                             $pm_special_tag = $pm_rec['special_tag'] ?? '';
 
-                            if ($has_calibration) {
-                                $pm_start = $pm_start_monitor ? calc_display_time($pm_start_monitor, $offset) : '';
-                                $pm_end = $pm_is_closing ? '营业结束' : ($pm_end_monitor ? calc_display_time($pm_end_monitor, $offset) : '');
+                            if ($pm_is_absent) {
+                                $pm_display = '❌未在岗';
                             } else {
-                                $pm_start = $pm_start_monitor;
-                                $pm_end = $pm_is_closing ? '营业结束' : $pm_end_monitor;
-                            }
+                                if ($has_calibration) {
+                                    $pm_start = $pm_start_monitor ? calc_display_time($pm_start_monitor, $offset) : '';
+                                    $pm_end = $pm_is_closing ? '营业结束' : ($pm_end_monitor ? calc_display_time($pm_end_monitor, $offset) : '');
+                                } else {
+                                    $pm_start = $pm_start_monitor;
+                                    $pm_end = $pm_is_closing ? '营业结束' : $pm_end_monitor;
+                                }
 
-                            // 格式化下午班显示
-                            if ($pm_start && $pm_end) {
-                                $pm_display = substr($pm_start, 0, 5) . '-' . ($pm_end === '营业结束' ? '营业结束' : substr($pm_end, 0, 5));
-                            } elseif ($pm_start) {
-                                $pm_display = substr($pm_start, 0, 5) . '-（缺失）';
-                            } elseif ($pm_end) {
-                                $pm_display = '（缺失）-' . ($pm_end === '营业结束' ? '营业结束' : substr($pm_end, 0, 5));
-                            } else {
-                                $pm_display = '--';
-                            }
+                                // 格式化下午班显示
+                                if ($pm_start && $pm_end) {
+                                    $pm_display = substr($pm_start, 0, 5) . '-' . ($pm_end === '营业结束' ? '营业结束' : substr($pm_end, 0, 5));
+                                } elseif ($pm_start) {
+                                    $pm_display = substr($pm_start, 0, 5) . '-（缺失）';
+                                } elseif ($pm_end) {
+                                    $pm_display = '（缺失）-' . ($pm_end === '营业结束' ? '营业结束' : substr($pm_end, 0, 5));
+                                } else {
+                                    $pm_display = '--';
+                                }
 
-                            // 添加下午班特殊标记
-                            if ($pm_special_tag) {
-                                $tag_emoji_map = [
-                                    '补货' => '📦',
-                                    '加班' => '⏰',
-                                    '培训' => '📚',
-                                    '盘点' => '📋'
-                                ];
-                                $pm_tag_emoji = $tag_emoji_map[$pm_special_tag] ?? '';
-                                $pm_display .= ' [' . $pm_tag_emoji . $pm_special_tag . ']';
+                                // 添加下午班特殊标记
+                                if ($pm_special_tag) {
+                                    $tag_emoji_map = [
+                                        '补货' => '📦',
+                                        '加班' => '⏰',
+                                        '培训' => '📚',
+                                        '盘点' => '📋'
+                                    ];
+                                    $pm_tag_emoji = $tag_emoji_map[$pm_special_tag] ?? '';
+                                    $pm_display .= ' [' . $pm_tag_emoji . $pm_special_tag . ']';
+                                }
                             }
 
                             // 生成监控时间显示
                             $am_monitor_display = '';
-                            if ($am_start_monitor && $am_end_monitor) {
-                                $am_monitor_display = substr($am_start_monitor, 0, 5) . '-' . ($am_is_closing ? '营业结束' : substr($am_end_monitor, 0, 5));
-                            } elseif ($am_start_monitor) {
-                                $am_monitor_display = substr($am_start_monitor, 0, 5) . '-（缺失）';
-                            } elseif ($am_end_monitor) {
-                                $am_monitor_display = '（缺失）-' . ($am_is_closing ? '营业结束' : substr($am_end_monitor, 0, 5));
+                            if (!$am_is_absent) {
+                                if ($am_start_monitor && $am_end_monitor) {
+                                    $am_monitor_display = substr($am_start_monitor, 0, 5) . '-' . ($am_is_closing ? '营业结束' : substr($am_end_monitor, 0, 5));
+                                } elseif ($am_start_monitor) {
+                                    $am_monitor_display = substr($am_start_monitor, 0, 5) . '-（缺失）';
+                                } elseif ($am_end_monitor) {
+                                    $am_monitor_display = '（缺失）-' . ($am_is_closing ? '营业结束' : substr($am_end_monitor, 0, 5));
+                                }
                             }
 
                             $pm_monitor_display = '';
-                            if ($pm_start_monitor && $pm_end_monitor) {
-                                $pm_monitor_display = substr($pm_start_monitor, 0, 5) . '-' . ($pm_is_closing ? '营业结束' : substr($pm_end_monitor, 0, 5));
-                            } elseif ($pm_start_monitor) {
-                                $pm_monitor_display = substr($pm_start_monitor, 0, 5) . '-（缺失）';
-                            } elseif ($pm_end_monitor) {
-                                $pm_monitor_display = '（缺失）-' . ($pm_is_closing ? '营业结束' : substr($pm_end_monitor, 0, 5));
+                            if (!$pm_is_absent) {
+                                if ($pm_start_monitor && $pm_end_monitor) {
+                                    $pm_monitor_display = substr($pm_start_monitor, 0, 5) . '-' . ($pm_is_closing ? '营业结束' : substr($pm_end_monitor, 0, 5));
+                                } elseif ($pm_start_monitor) {
+                                    $pm_monitor_display = substr($pm_start_monitor, 0, 5) . '-（缺失）';
+                                } elseif ($pm_end_monitor) {
+                                    $pm_monitor_display = '（缺失）-' . ($pm_is_closing ? '营业结束' : substr($pm_end_monitor, 0, 5));
+                                }
                             }
 
                             // 只显示有记录的日期
