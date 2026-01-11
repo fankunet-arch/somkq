@@ -1,0 +1,8 @@
+{
+    "name": "somkq/workbench",
+    "description": "SOMKQ Workbench System",
+    "type": "project",
+    "require": {
+        "aws/aws-sdk-php": "^3.369"
+    }
+}
