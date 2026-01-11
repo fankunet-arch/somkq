@@ -15,9 +15,7 @@ $app_path = __DIR__ . '/../../app/somkq';
 if (!file_exists($app_path . '/config.php')) die("Config file missing");
 $config = require $app_path . '/config.php';
 require_once $app_path . '/db.php';
-
-// 引入 Composer autoload（用于 AWS SDK）
-require_once __DIR__ . '/../../vendor/autoload.php';
+require_once $app_path . '/r2_client.php';
 
 // Session 初始化
 session_name($config['session_name']);
@@ -498,46 +496,39 @@ function handle_upload_video_ajax($pdo, $config) {
 // ==========================================
 
 /**
- * 创建 R2 S3 客户端
+ * 创建 R2 客户端
  */
 function create_r2_client($config) {
-    return new \Aws\S3\S3Client([
-        'version' => 'latest',
-        'region' => $config['r2_region'],
-        'endpoint' => $config['r2_endpoint'],
-        'credentials' => [
-            'key' => $config['r2_access_key_id'],
-            'secret' => $config['r2_secret_access_key'],
-        ],
-        'use_path_style_endpoint' => false,
-    ]);
+    return new R2Client(
+        $config['r2_account_id'],
+        $config['r2_access_key_id'],
+        $config['r2_secret_access_key'],
+        $config['r2_bucket_name'],
+        $config['r2_region']
+    );
 }
 
 /**
  * 上传文件到 R2（带重试机制）
- * @param object $s3Client S3客户端
+ * @param R2Client $r2Client R2客户端
  * @param string $localPath 本地文件路径
  * @param string $r2Key R2中的对象键（路径）
- * @param string $bucket Bucket名称
  * @param int $maxRetries 最大重试次数
  * @return bool 是否成功
  */
-function upload_to_r2_with_retry($s3Client, $localPath, $r2Key, $bucket, $maxRetries = 3) {
+function upload_to_r2_with_retry($r2Client, $localPath, $r2Key, $maxRetries = 3) {
     for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
-        try {
-            $s3Client->putObject([
-                'Bucket' => $bucket,
-                'Key' => $r2Key,
-                'SourceFile' => $localPath,
-                'ContentType' => mime_content_type($localPath),
-            ]);
+        $result = $r2Client->putObject($r2Key, $localPath, mime_content_type($localPath));
+
+        if ($result['success']) {
             return true;
-        } catch (Exception $e) {
-            if ($attempt >= $maxRetries) {
-                return false;
-            }
-            usleep(500000 * $attempt); // 0.5秒, 1秒, 1.5秒
         }
+
+        if ($attempt >= $maxRetries) {
+            return false;
+        }
+
+        usleep(500000 * $attempt); // 0.5秒, 1秒, 1.5秒
     }
     return false;
 }
@@ -598,7 +589,7 @@ function handle_migrate_videos($pdo, $config) {
 
     // 创建 R2 客户端
     try {
-        $s3Client = create_r2_client($config);
+        $r2Client = create_r2_client($config);
     } catch (Exception $e) {
         echo "<div style='color: red;'>❌ 无法连接到 R2: " . htmlspecialchars($e->getMessage()) . "</div>";
         echo "</div></div>";
@@ -646,7 +637,7 @@ function handle_migrate_videos($pdo, $config) {
         $r2_key = "somkq/videos/{$date_year}/{$date_month}/{$file_name}";
 
         // 上传到 R2（带重试）
-        $upload_success = upload_to_r2_with_retry($s3Client, $local_path, $r2_key, $config['r2_bucket_name'], 3);
+        $upload_success = upload_to_r2_with_retry($r2Client, $local_path, $r2_key, 3);
 
         if (!$upload_success) {
             echo "<span style='color: red;'>❌ 上传失败（重试3次后仍失败）</span>";
