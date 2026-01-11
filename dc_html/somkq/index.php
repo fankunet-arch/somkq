@@ -15,6 +15,7 @@ $app_path = __DIR__ . '/../../app/somkq';
 if (!file_exists($app_path . '/config.php')) die("Config file missing");
 $config = require $app_path . '/config.php';
 require_once $app_path . '/db.php';
+require_once $app_path . '/r2_client.php';
 
 // Session 初始化
 session_name($config['session_name']);
@@ -123,6 +124,15 @@ try {
             $data = get_monthly_data($pdo, $config['staff_list'], $year, $month);
             view_header($year . '年' . $month . '月考勤总表');
             view_monthly_report($year, $month, $data);
+            view_footer();
+            break;
+
+        case 'migrate_videos':
+            if (($_SESSION['user_role'] ?? '') !== 'admin') {
+                die('权限不足：只有管理员可以执行视频转移');
+            }
+            view_header('视频转移到 R2');
+            handle_migrate_videos($pdo, $config);
             view_footer();
             break;
 
@@ -479,6 +489,208 @@ function handle_upload_video_ajax($pdo, $config) {
         echo json_encode(['status' => 'error', 'message' => 'Exception: ' . $e->getMessage()]);
     }
     exit;
+}
+
+// ==========================================
+// R2 云存储相关函数
+// ==========================================
+
+/**
+ * 创建 R2 客户端
+ */
+function create_r2_client($config) {
+    return new R2Client(
+        $config['r2_account_id'],
+        $config['r2_access_key_id'],
+        $config['r2_secret_access_key'],
+        $config['r2_bucket_name'],
+        $config['r2_region']
+    );
+}
+
+/**
+ * 上传文件到 R2（带重试机制）
+ * @param R2Client $r2Client R2客户端
+ * @param string $localPath 本地文件路径
+ * @param string $r2Key R2中的对象键（路径）
+ * @param int $maxRetries 最大重试次数
+ * @return bool 是否成功
+ */
+function upload_to_r2_with_retry($r2Client, $localPath, $r2Key, $maxRetries = 3) {
+    for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+        $result = $r2Client->putObject($r2Key, $localPath, mime_content_type($localPath));
+
+        if ($result['success']) {
+            return true;
+        }
+
+        if ($attempt >= $maxRetries) {
+            return false;
+        }
+
+        usleep(500000 * $attempt); // 0.5秒, 1秒, 1.5秒
+    }
+    return false;
+}
+
+/**
+ * 处理视频转移到 R2
+ */
+function handle_migrate_videos($pdo, $config) {
+    // 计算上个月的时间范围
+    $last_month_start = date('Y-m-01', strtotime('first day of last month'));
+    $last_month_end = date('Y-m-t', strtotime('last day of last month'));
+
+    $last_month_year = date('Y', strtotime($last_month_start));
+    $last_month_month = date('m', strtotime($last_month_start));
+
+    echo "<div class='container' style='max-width: 800px;'>";
+    echo "<h2>转移上个月视频到 R2</h2>";
+    echo "<p>目标月份: <strong>{$last_month_year}年{$last_month_month}月</strong> ({$last_month_start} 至 {$last_month_end})</p>";
+    echo "<hr>";
+
+    // 查询上个月的所有视频（file_name 不以 http 开头的）
+    $stmt = $pdo->prepare("
+        SELECT v.id, v.file_name, v.original_name, r.record_date
+        FROM somkq_shift_videos v
+        INNER JOIN somkq_shift_records r ON v.record_id = r.id
+        WHERE r.record_date >= ? AND r.record_date <= ?
+        AND v.file_name NOT LIKE 'http%'
+        ORDER BY v.id ASC
+    ");
+    $stmt->execute([$last_month_start, $last_month_end]);
+    $videos = $stmt->fetchAll();
+
+    $total = count($videos);
+
+    if ($total === 0) {
+        echo "<div style='padding: 20px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px;'>";
+        echo "✅ 没有需要转移的视频（可能已全部转移或该月无视频记录）";
+        echo "</div>";
+        echo "<p style='margin-top: 20px;'><a href='?action=home' style='color: #007bff;'>← 返回工作台</a></p>";
+        echo "</div>";
+        return;
+    }
+
+    echo "<p>找到 <strong>{$total}</strong> 个视频文件需要转移</p>";
+    echo "<div style='background: #f8f9fa; padding: 15px; border-radius: 4px; margin-bottom: 20px;'>";
+    echo "<strong>转移进度：</strong>";
+    echo "<div id='progress-bar' style='width: 100%; height: 30px; background: #e9ecef; border-radius: 4px; margin-top: 10px; overflow: hidden;'>";
+    echo "<div id='progress-fill' style='width: 0%; height: 100%; background: #28a745; transition: width 0.3s;'></div>";
+    echo "</div>";
+    echo "<p id='progress-text' style='margin-top: 10px; font-size: 14px;'>准备开始...</p>";
+    echo "</div>";
+
+    echo "<div id='log-container' style='background: #fff; border: 1px solid #dee2e6; border-radius: 4px; padding: 15px; max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 12px;'>";
+
+    // 刷新输出缓冲，使进度实时显示
+    if (ob_get_level() > 0) ob_flush();
+    flush();
+
+    // 创建 R2 客户端
+    try {
+        $r2Client = create_r2_client($config);
+    } catch (Exception $e) {
+        echo "<div style='color: red;'>❌ 无法连接到 R2: " . htmlspecialchars($e->getMessage()) . "</div>";
+        echo "</div></div>";
+        return;
+    }
+
+    $success_count = 0;
+    $fail_count = 0;
+    $skipped_count = 0;
+
+    foreach ($videos as $index => $video) {
+        $vid_id = $video['id'];
+        $file_name = $video['file_name'];
+        $record_date = $video['record_date'];
+
+        $progress = round(($index / $total) * 100);
+        $current_num = $index + 1;
+
+        echo "<script>";
+        echo "document.getElementById('progress-fill').style.width = '{$progress}%';";
+        echo "document.getElementById('progress-text').textContent = '正在处理: {$current_num}/{$total} ({$progress}%)';";
+        echo "</script>";
+
+        if (ob_get_level() > 0) ob_flush();
+        flush();
+
+        echo "<div style='margin-bottom: 8px;'>";
+        echo "<strong>[{$current_num}/{$total}]</strong> {$file_name} ... ";
+
+        if (ob_get_level() > 0) ob_flush();
+        flush();
+
+        // 检查本地文件是否存在
+        $local_path = $config['path_video_upload'] . '/' . $file_name;
+        if (!file_exists($local_path)) {
+            echo "<span style='color: orange;'>⚠️ 跳过（本地文件不存在）</span>";
+            $skipped_count++;
+            echo "</div>";
+            continue;
+        }
+
+        // 构建 R2 路径: somkq/videos/YYYY/MM/filename.mp4
+        $date_year = date('Y', strtotime($record_date));
+        $date_month = date('m', strtotime($record_date));
+        $r2_key = "somkq/videos/{$date_year}/{$date_month}/{$file_name}";
+
+        // 上传到 R2（带重试）
+        $upload_success = upload_to_r2_with_retry($r2Client, $local_path, $r2_key, 3);
+
+        if (!$upload_success) {
+            echo "<span style='color: red;'>❌ 上传失败（重试3次后仍失败）</span>";
+            $fail_count++;
+            echo "</div>";
+            continue;
+        }
+
+        // 构建归档目录路径: uploads/videos/archived/YYYY/MM/
+        $archive_dir = $config['path_video_archive'] . "/{$date_year}/{$date_month}";
+        if (!is_dir($archive_dir)) {
+            mkdir($archive_dir, 0777, true);
+        }
+
+        // 移动本地文件到归档目录
+        $archive_path = $archive_dir . '/' . $file_name;
+        if (!rename($local_path, $archive_path)) {
+            echo "<span style='color: orange;'>⚠️ 已上传R2但本地归档失败</span>";
+            // 即使归档失败，仍然更新数据库，因为R2已经有了
+        }
+
+        // 更新数据库，将 file_name 改为 R2 的完整 URL
+        $r2_url = $config['r2_public_url'] . '/' . $r2_key;
+        $update_stmt = $pdo->prepare("UPDATE somkq_shift_videos SET file_name = ? WHERE id = ?");
+        $update_stmt->execute([$r2_url, $vid_id]);
+
+        echo "<span style='color: green;'>✅ 成功</span>";
+        $success_count++;
+        echo "</div>";
+
+        if (ob_get_level() > 0) ob_flush();
+        flush();
+    }
+
+    // 更新进度条为100%
+    echo "<script>";
+    echo "document.getElementById('progress-fill').style.width = '100%';";
+    echo "document.getElementById('progress-text').textContent = '转移完成！';";
+    echo "</script>";
+
+    echo "</div>"; // log-container
+
+    echo "<hr>";
+    echo "<h3>转移结果汇总</h3>";
+    echo "<ul>";
+    echo "<li>总计: {$total} 个视频</li>";
+    echo "<li style='color: green;'>✅ 成功: {$success_count}</li>";
+    echo "<li style='color: red;'>❌ 失败: {$fail_count}</li>";
+    echo "<li style='color: orange;'>⚠️ 跳过: {$skipped_count}</li>";
+    echo "</ul>";
+
+    echo "<p style='margin-top: 20px;'><a href='?action=home' style='color: #007bff; font-size: 16px;'>← 返回工作台</a></p>";
+    echo "</div>";
 }
 
 // ==========================================
@@ -997,9 +1209,17 @@ function view_video_grid($date, $staff, $shift_type, $timing_type, $videos, $rec
     ?>
     <div class="media-grid">
         <?php foreach($videos as $v):
-            $file_url = $config['url_video'] . '/' . $v['file_name'];
-            $file_abs = $config['path_video_upload'] . '/' . $v['file_name'];
-            $exists = file_exists($file_abs);
+            // 检查是否为 R2 URL（已转移到云端）
+            if (strpos($v['file_name'], 'http') === 0) {
+                // R2 视频：直接使用完整 URL
+                $file_url = $v['file_name'];
+                $exists = true; // R2 视频视为始终存在
+            } else {
+                // 本地视频：拼接本地路径
+                $file_url = $config['url_video'] . '/' . $v['file_name'];
+                $file_abs = $config['path_video_upload'] . '/' . $v['file_name'];
+                $exists = file_exists($file_abs);
+            }
         ?>
         <div class="media-item">
             <div class="media-content">
@@ -1053,9 +1273,13 @@ function view_login($error = null) {
 }
 
 function view_dashboard($data, $offset) {
+    $is_admin = ($_SESSION['user_role'] ?? '') === 'admin';
     ?>
     <div class="navbar">
         <a href="?action=monthly_report">月度总表</a>
+        <?php if($is_admin): ?>
+        <a href="?action=migrate_videos" style="background: #ffc107; color: #000; border-radius: 3px; padding: 5px 10px; margin-right: 5px;">📦 转移上月视频</a>
+        <?php endif; ?>
         <span class="title">工作台</span>
         <a href="?action=logout">退出</a>
     </div>

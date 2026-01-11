@@ -42,6 +42,9 @@ return [
     // 图片归档目录 (无末尾斜杠)
     'path_image_archive' => __DIR__ . '/../../dc_html/somkq/uploads/images/archived',
 
+    // 视频归档目录 (无末尾斜杠)
+    'path_video_archive' => __DIR__ . '/../../dc_html/somkq/uploads/videos/archived',
+
     // -------------------------
     // URL 配置 (用于前端访问)
     // -------------------------
@@ -53,4 +56,15 @@ return [
 
     // 图片访问 URL 前缀
     'url_image' => '/somkq/uploads/images',
+
+    // -------------------------
+    // Cloudflare R2 配置
+    // -------------------------
+    'r2_account_id' => '5abbc858234958e8b524efcca03de6bf',
+    'r2_access_key_id' => '335ddb5dc9d85c57a1a47f5e549b0c51',
+    'r2_secret_access_key' => '68100f3a4a1c75924c3e57f3cd4d5625fe653dd9484c5115f404d1039307afac',
+    'r2_bucket_name' => 'vis-videos',
+    'r2_endpoint' => 'https://5abbc858234958e8b524efcca03de6bf.r2.cloudflarestorage.com',
+    'r2_region' => 'auto',
+    'r2_public_url' => 'https://vis.dc.abcabc.net', // R2公共访问域名
 ];
