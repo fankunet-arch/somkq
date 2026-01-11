@@ -1090,41 +1090,36 @@ function view_footer() {
             const staff = checkbox.dataset.staff;
             const shift = checkbox.dataset.shift;
 
-            // 查找该员工该班次的所有区域
-            const card = checkbox.closest('.card');
-            const attendanceSection = checkbox.closest('div').querySelector('.attendance-section');
+            // 查找该员工该班次的所有区域 (不再依赖 DOM 结构查找 attendanceSection)
+            const startWrapper = document.querySelector('.monitor-input-group-' + staff + '_' + shift + '_start');
+            const endWrapper = document.querySelector('.monitor-input-group-' + staff + '_' + shift + '_end');
 
-            // 查找上班和下班区域的时间输入框和实时显示
-            const allTimeWrappers = card.querySelectorAll('.time-box-wrapper');
-            const allRealTimeDisplays = card.querySelectorAll('.real-time-display[data-source^="' + staff + '_' + shift + '"]');
+            const wrappers = [];
+            if (startWrapper) wrappers.push(startWrapper);
+            if (endWrapper) wrappers.push(endWrapper);
+
+            // 查找实时显示
+            const allRealTimeDisplays = document.querySelectorAll('.real-time-display[data-source^="' + staff + '_' + shift + '"]');
 
             if (checkbox.checked) {
                 // 禁用所有时间输入
-                allTimeWrappers.forEach(wrapper => {
+                wrappers.forEach(wrapper => {
                     wrapper.classList.add('disabled');
                     wrapper.querySelectorAll('input').forEach(inp => inp.disabled = true);
+                    wrapper.style.opacity = '0.5'; // 视觉反馈
                 });
                 // 更新所有实时显示
                 allRealTimeDisplays.forEach(display => {
                     display.textContent = '实: 未在岗';
                     display.style.color = '#dc3545';
                 });
-                // 隐藏整个出勤区域
-                if (attendanceSection) {
-                    attendanceSection.style.opacity = '0.5';
-                    attendanceSection.style.pointerEvents = 'none';
-                }
             } else {
                 // 恢复所有时间输入
-                allTimeWrappers.forEach(wrapper => {
+                wrappers.forEach(wrapper => {
                     wrapper.classList.remove('disabled');
                     wrapper.querySelectorAll('input').forEach(inp => inp.disabled = false);
+                    wrapper.style.opacity = '1';
                 });
-                // 恢复整个出勤区域
-                if (attendanceSection) {
-                    attendanceSection.style.opacity = '1';
-                    attendanceSection.style.pointerEvents = 'auto';
-                }
                 calcRealTime(); // 恢复时重新计算
             }
         }
@@ -1528,15 +1523,10 @@ function view_day_detail($date, $data) {
                                 </span>
                             </div>
                             <?php if ($is_admin): ?>
-                                <label class="absent-checkbox-label" style="display:block; margin-bottom:12px; padding:8px; background:#fff3cd; border-left:3px solid #ffc107; border-radius:4px; cursor:pointer;">
-                                    <input type="checkbox" name="<?php echo $prefix; ?>[is_absent]" class="is-absent-check" data-staff="<?php echo $staff_name; ?>" data-shift="<?php echo $type_key; ?>" <?php echo $is_absent?'checked':''; ?>>
-                                    <span style="font-size:13px; color:#856404; font-weight:bold; margin-left:4px;">❌ 未在岗位出现过</span>
-                                </label>
-                                <div class="attendance-section">
-                                    <div style="margin-bottom:8px;">
-                                        <label style="font-size:12px; color:#666; display:block; margin-bottom:4px;">监控时间</label>
-                                        <?php view_time_input_visual($prefix . '[start_time]', $m_start, "{$staff_name}_{$type_key}_start"); ?>
-                                    </div>
+                                <div style="margin-bottom:8px;">
+                                    <label style="font-size:12px; color:#666; display:block; margin-bottom:4px;">监控时间</label>
+                                    <?php view_time_input_visual($prefix . '[start_time]', $m_start, "{$staff_name}_{$type_key}_start"); ?>
+                                </div>
                             <?php else: ?>
                                 <?php if ($is_absent): ?>
                                     <div style="padding:10px; background:#fff3cd; border-left:3px solid #ffc107; border-radius:4px; margin-bottom:8px;">
@@ -1547,9 +1537,6 @@ function view_day_detail($date, $data) {
                                         监控: <?php echo $m_start ?: '未设置'; ?>
                                     </div>
                                 <?php endif; ?>
-                            <?php endif; ?>
-                            <?php if ($is_admin): ?>
-                                </div>
                             <?php endif; ?>
                             <?php view_video_grid($date, $staff_name, $type_key, 'start', $info['videos_start'], $record_id, $config, $is_admin); ?>
                         </div>
@@ -1581,6 +1568,10 @@ function view_day_detail($date, $data) {
                                 </span>
                             </div>
                             <?php if ($is_admin): ?>
+                                <label class="absent-checkbox-label" style="display:block; margin-bottom:12px; padding:8px; background:#fff3cd; border-left:3px solid #ffc107; border-radius:4px; cursor:pointer;">
+                                    <input type="checkbox" name="<?php echo $prefix; ?>[is_absent]" class="is-absent-check" data-staff="<?php echo $staff_name; ?>" data-shift="<?php echo $type_key; ?>" <?php echo $is_absent?'checked':''; ?>>
+                                    <span style="font-size:13px; color:#856404; font-weight:bold; margin-left:4px;">❌ 未在岗位出现过</span>
+                                </label>
                                 <div style="margin-bottom:8px;">
                                     <label style="font-size:12px; color:#666; display:block; margin-bottom:4px;">监控时间</label>
                                     <?php view_time_input_visual($prefix . '[end_time]', $m_end, "{$staff_name}_{$type_key}_end"); ?>
