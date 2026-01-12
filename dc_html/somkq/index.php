@@ -1838,17 +1838,17 @@ function view_monthly_report($year, $month, $data) {
                                 <td style="<?php echo $cell_style; ?>">
                                     <?php if ($work_status == 2): ?>
                                         <!-- 未在岗位出现过 -->
-                                        <div style="text-align:center; padding:8px 0;">
-                                            <span style="color:#666; font-size:11px; font-weight:bold; display:block; margin-bottom:2px;">❌ 未在岗</span>
-                                            <span style="color:#999; font-size:9px;">(未出现)</span>
+                                        <div style="text-align:center; margin-bottom:4px;">
+                                            <span style="color:#666; font-size:11px; font-weight:bold; display:block;">❌ 未在岗</span>
                                         </div>
                                     <?php elseif ($work_status == 1): ?>
                                         <!-- 短暂出现 -->
-                                        <div style="text-align:center; padding:8px 0;">
-                                            <span style="color:#856404; font-size:11px; font-weight:bold; display:block; margin-bottom:2px;">⏱️ 短暂出现</span>
-                                            <span style="color:#999; font-size:9px;"><?php echo $display_start ?: '--:--'; ?> ~ <?php echo $display_end ?: '--:--'; ?></span>
+                                        <div style="text-align:center; margin-bottom:4px;">
+                                            <span style="color:#856404; font-size:11px; font-weight:bold; display:block;">⏱️ 短暂出现</span>
                                         </div>
-                                    <?php elseif ($display_start || $display_end || $special_tag): ?>
+                                    <?php endif; ?>
+
+                                    <?php if ($display_start || $display_end || $special_tag || $work_status != 0): ?>
                                         <?php if ($has_incomplete_record): ?>
                                             <div style="position:absolute; top:2px; right:2px;">
                                                 <span style="color:<?php echo $warning_color; ?>; font-size:14px; font-weight:bold;" title="<?php echo $incomplete_type === 'missing_end' ? '缺少下班时间' : '缺少上班时间'; ?>">⚠️</span>
