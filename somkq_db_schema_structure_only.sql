@@ -55,7 +55,7 @@ CREATE TABLE `somkq_shift_records` (
   `start_time_monitor` time DEFAULT NULL COMMENT '上班时间 (监控时间)',
   `end_time_monitor` time DEFAULT NULL COMMENT '下班时间 (监控时间)',
   `is_end_at_closing` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1=至营业结束',
-  `is_absent` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1=未在岗位出现过',
+  `work_status` tinyint(1) NOT NULL DEFAULT '0' COMMENT '工作状态: 0=出勤, 1=短暂出现, 2=未在岗位出现过',
   `special_tag` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '特殊标记（如：补货、加班等）',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
