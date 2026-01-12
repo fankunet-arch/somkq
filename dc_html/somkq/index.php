@@ -227,7 +227,7 @@ function handle_save_shift($pdo) {
     $start = get_post_time('start_time_monitor');
     $end = get_post_time('end_time_monitor');
     $is_closing = isset($_POST['is_end_at_closing']) ? 1 : 0;
-    $is_absent = isset($_POST['is_absent']) ? 1 : 0;
+    $work_status = isset($_POST['work_status']) ? intval($_POST['work_status']) : 0;
 
     if (empty($id)) {
         $stmt = $pdo->prepare("SELECT id FROM somkq_shift_records WHERE record_date=? AND staff_name=? AND shift_type=?");
@@ -237,11 +237,11 @@ function handle_save_shift($pdo) {
     }
 
     if ($id) {
-        $stmt = $pdo->prepare("UPDATE somkq_shift_records SET start_time_monitor=?, end_time_monitor=?, is_end_at_closing=?, is_absent=? WHERE id=?");
-        $stmt->execute([$start, $end, $is_closing, $is_absent, $id]);
+        $stmt = $pdo->prepare("UPDATE somkq_shift_records SET start_time_monitor=?, end_time_monitor=?, is_end_at_closing=?, work_status=? WHERE id=?");
+        $stmt->execute([$start, $end, $is_closing, $work_status, $id]);
     } else {
-        $stmt = $pdo->prepare("INSERT INTO somkq_shift_records (record_date, staff_name, shift_type, start_time_monitor, end_time_monitor, is_end_at_closing, is_absent) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$date, $staff, $shift, $start, $end, $is_closing, $is_absent]);
+        $stmt = $pdo->prepare("INSERT INTO somkq_shift_records (record_date, staff_name, shift_type, start_time_monitor, end_time_monitor, is_end_at_closing, work_status) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$date, $staff, $shift, $start, $end, $is_closing, $work_status]);
     }
 
     header("Location: ?action=day_view&date=$date");
@@ -342,7 +342,7 @@ function handle_save_day_all($pdo, $config) {
                 $start = get_post_time_from_array($data['start_time'] ?? []);
                 $end = get_post_time_from_array($data['end_time'] ?? []);
                 $is_closing = isset($data['is_end_at_closing']) ? 1 : 0;
-                $is_absent = isset($data['is_absent']) ? 1 : 0;
+                $work_status = isset($data['work_status']) ? intval($data['work_status']) : 0;
                 $special_tag = isset($data['special_tag']) && !empty($data['special_tag']) ? $data['special_tag'] : null;
 
                 // 查找现有记录 ID
@@ -351,13 +351,13 @@ function handle_save_day_all($pdo, $config) {
                 $existing_id = $stmt->fetchColumn();
 
                 if ($existing_id) {
-                    $stmt = $pdo->prepare("UPDATE somkq_shift_records SET start_time_monitor=?, end_time_monitor=?, is_end_at_closing=?, is_absent=?, special_tag=? WHERE id=?");
-                    $stmt->execute([$start, $end, $is_closing, $is_absent, $special_tag, $existing_id]);
+                    $stmt = $pdo->prepare("UPDATE somkq_shift_records SET start_time_monitor=?, end_time_monitor=?, is_end_at_closing=?, work_status=?, special_tag=? WHERE id=?");
+                    $stmt->execute([$start, $end, $is_closing, $work_status, $special_tag, $existing_id]);
                 } else {
                     // 只有当有数据输入时才插入新记录
-                    if ($start || $end || $is_closing || $is_absent || $special_tag) {
-                        $stmt = $pdo->prepare("INSERT INTO somkq_shift_records (record_date, staff_name, shift_type, start_time_monitor, end_time_monitor, is_end_at_closing, is_absent, special_tag) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                        $stmt->execute([$date, $staff, $shift_type, $start, $end, $is_closing, $is_absent, $special_tag]);
+                    if ($start || $end || $is_closing || $work_status || $special_tag) {
+                        $stmt = $pdo->prepare("INSERT INTO somkq_shift_records (record_date, staff_name, shift_type, start_time_monitor, end_time_monitor, is_end_at_closing, work_status, special_tag) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->execute([$date, $staff, $shift_type, $start, $end, $is_closing, $work_status, $special_tag]);
                     }
                 }
             }
@@ -1509,7 +1509,7 @@ function view_day_detail($date, $data) {
                             $record_id = $rec['id'] ?? '';
                             $m_start = $rec['start_time_monitor'] ?? '';
                             $r_start = calc_display_time($m_start, $offset);
-                            $is_absent = $rec['is_absent'] ?? 0;
+                            $work_status = $rec['work_status'] ?? 0;
                             $prefix = "shifts[$staff_name][$type_key]";
                             $staff_color = $staff_colors[$staff_name] ?? ['bg' => '#f5f5f5', 'text' => '#666'];
                         ?>
@@ -1528,9 +1528,13 @@ function view_day_detail($date, $data) {
                                     <?php view_time_input_visual($prefix . '[start_time]', $m_start, "{$staff_name}_{$type_key}_start"); ?>
                                 </div>
                             <?php else: ?>
-                                <?php if ($is_absent): ?>
+                                <?php if ($work_status == 2): ?>
+                                    <div style="padding:10px; background:#f0f0f0; border-left:3px solid #999; border-radius:4px; margin-bottom:8px;">
+                                        <span style="font-size:13px; color:#666; font-weight:bold;">❌ 未在岗位出现过</span>
+                                    </div>
+                                <?php elseif ($work_status == 1): ?>
                                     <div style="padding:10px; background:#fff3cd; border-left:3px solid #ffc107; border-radius:4px; margin-bottom:8px;">
-                                        <span style="font-size:13px; color:#856404; font-weight:bold;">❌ 未在岗位出现过</span>
+                                        <span style="font-size:13px; color:#856404; font-weight:bold;">⏱️ 短暂出现</span>
                                     </div>
                                 <?php else: ?>
                                     <div style="padding:8px; background:#fff; border-radius:4px; font-family:monospace; color:#333; margin-bottom:8px;">
@@ -1554,6 +1558,7 @@ function view_day_detail($date, $data) {
                             $record_id = $rec['id'] ?? '';
                             $m_end = $rec['end_time_monitor'] ?? '';
                             $is_closing = $rec['is_end_at_closing'] ?? 0;
+                            $work_status = $rec['work_status'] ?? 0;
                             $r_end = $is_closing ? '营业结束' : calc_display_time($m_end, $offset);
                             $prefix = "shifts[$staff_name][$type_key]";
                             $staff_color = $staff_colors[$staff_name] ?? ['bg' => '#f5f5f5', 'text' => '#666'];
@@ -1568,10 +1573,23 @@ function view_day_detail($date, $data) {
                                 </span>
                             </div>
                             <?php if ($is_admin): ?>
-                                <label class="absent-checkbox-label" style="display:block; margin-bottom:12px; padding:8px; background:#fff3cd; border-left:3px solid #ffc107; border-radius:4px; cursor:pointer;">
-                                    <input type="checkbox" name="<?php echo $prefix; ?>[is_absent]" class="is-absent-check" data-staff="<?php echo $staff_name; ?>" data-shift="<?php echo $type_key; ?>" <?php echo $is_absent?'checked':''; ?>>
-                                    <span style="font-size:13px; color:#856404; font-weight:bold; margin-left:4px;">❌ 未在岗位出现过</span>
-                                </label>
+                                <div style="margin-bottom:12px; padding:10px; background:#f8f9fa; border:1px solid #dee2e6; border-radius:4px;">
+                                    <label style="font-size:12px; color:#495057; font-weight:bold; display:block; margin-bottom:8px;">工作状态</label>
+                                    <div style="display:flex; flex-direction:column; gap:6px;">
+                                        <label style="display:flex; align-items:center; padding:6px 8px; background:#fff; border:1px solid #dee2e6; border-radius:4px; cursor:pointer; transition:all 0.2s;" class="work-status-option">
+                                            <input type="radio" name="<?php echo $prefix; ?>[work_status]" value="0" class="work-status-radio" <?php echo $work_status==0?'checked':''; ?> style="margin-right:8px;">
+                                            <span style="font-size:13px;">✅ 出勤（正常在岗）</span>
+                                        </label>
+                                        <label style="display:flex; align-items:center; padding:6px 8px; background:#fff3cd; border:1px solid #ffc107; border-radius:4px; cursor:pointer; transition:all 0.2s;" class="work-status-option">
+                                            <input type="radio" name="<?php echo $prefix; ?>[work_status]" value="1" class="work-status-radio" <?php echo $work_status==1?'checked':''; ?> style="margin-right:8px;">
+                                            <span style="font-size:13px; color:#856404; font-weight:bold;">⏱️ 短暂出现</span>
+                                        </label>
+                                        <label style="display:flex; align-items:center; padding:6px 8px; background:#f0f0f0; border:1px solid #999; border-radius:4px; cursor:pointer; transition:all 0.2s;" class="work-status-option">
+                                            <input type="radio" name="<?php echo $prefix; ?>[work_status]" value="2" class="work-status-radio" <?php echo $work_status==2?'checked':''; ?> style="margin-right:8px;">
+                                            <span style="font-size:13px; color:#666; font-weight:bold;">❌ 未在岗位出现过</span>
+                                        </label>
+                                    </div>
+                                </div>
                                 <div style="margin-bottom:8px;">
                                     <label style="font-size:12px; color:#666; display:block; margin-bottom:4px;">监控时间</label>
                                     <?php view_time_input_visual($prefix . '[end_time]', $m_end, "{$staff_name}_{$type_key}_end"); ?>
@@ -1749,7 +1767,7 @@ function view_monthly_report($year, $month, $data) {
                                     $start_monitor = $rec['start_time_monitor'] ?? '';
                                     $end_monitor = $rec['end_time_monitor'] ?? '';
                                     $is_closing = $rec['is_end_at_closing'] ?? 0;
-                                    $is_absent = $rec['is_absent'] ?? 0;
+                                    $work_status = $rec['work_status'] ?? 0;
                                     $record_id = $rec['id'] ?? null;
                                     $special_tag = $rec['special_tag'] ?? '';
 
@@ -1807,19 +1825,28 @@ function view_monthly_report($year, $month, $data) {
 
                                     // 单元格样式
                                     $cell_style = 'border:1px solid #ddd; padding:6px; font-size:11px; font-family:monospace;';
-                                    if ($is_absent) {
+                                    if ($work_status == 2) {
                                         // 未在岗位出现过：灰色背景
                                         $cell_style = 'border:2px solid #999; padding:5px; font-size:11px; font-family:monospace; background:#f0f0f0; position:relative;';
+                                    } elseif ($work_status == 1) {
+                                        // 短暂出现：黄色背景
+                                        $cell_style = 'border:2px solid #ffc107; padding:5px; font-size:11px; font-family:monospace; background:#fff3cd; position:relative;';
                                     } elseif ($has_incomplete_record) {
                                         $cell_style = "border:3px solid $warning_color; padding:4px; font-size:11px; font-family:monospace; background:#fff3cd; position:relative;";
                                     }
                                 ?>
                                 <td style="<?php echo $cell_style; ?>">
-                                    <?php if ($is_absent): ?>
+                                    <?php if ($work_status == 2): ?>
                                         <!-- 未在岗位出现过 -->
                                         <div style="text-align:center; padding:8px 0;">
                                             <span style="color:#666; font-size:11px; font-weight:bold; display:block; margin-bottom:2px;">❌ 未在岗</span>
                                             <span style="color:#999; font-size:9px;">(未出现)</span>
+                                        </div>
+                                    <?php elseif ($work_status == 1): ?>
+                                        <!-- 短暂出现 -->
+                                        <div style="text-align:center; padding:8px 0;">
+                                            <span style="color:#856404; font-size:11px; font-weight:bold; display:block; margin-bottom:2px;">⏱️ 短暂出现</span>
+                                            <span style="color:#999; font-size:9px;"><?php echo $display_start ?: '--:--'; ?> ~ <?php echo $display_end ?: '--:--'; ?></span>
                                         </div>
                                     <?php elseif ($display_start || $display_end || $special_tag): ?>
                                         <?php if ($has_incomplete_record): ?>
@@ -1925,11 +1952,13 @@ function view_monthly_report($year, $month, $data) {
                             $am_start_monitor = $am_rec['start_time_monitor'] ?? '';
                             $am_end_monitor = $am_rec['end_time_monitor'] ?? '';
                             $am_is_closing = $am_rec['is_end_at_closing'] ?? 0;
-                            $am_is_absent = $am_rec['is_absent'] ?? 0;
+                            $am_work_status = $am_rec['work_status'] ?? 0;
                             $am_special_tag = $am_rec['special_tag'] ?? '';
 
-                            if ($am_is_absent) {
+                            if ($am_work_status == 2) {
                                 $am_display = '❌未在岗';
+                            } elseif ($am_work_status == 1) {
+                                $am_display = '⏱️短暂出现';
                             } else {
                                 if ($has_calibration) {
                                     $am_start = $am_start_monitor ? calc_display_time($am_start_monitor, $offset) : '';
@@ -1967,11 +1996,13 @@ function view_monthly_report($year, $month, $data) {
                             $pm_start_monitor = $pm_rec['start_time_monitor'] ?? '';
                             $pm_end_monitor = $pm_rec['end_time_monitor'] ?? '';
                             $pm_is_closing = $pm_rec['is_end_at_closing'] ?? 0;
-                            $pm_is_absent = $pm_rec['is_absent'] ?? 0;
+                            $pm_work_status = $pm_rec['work_status'] ?? 0;
                             $pm_special_tag = $pm_rec['special_tag'] ?? '';
 
-                            if ($pm_is_absent) {
+                            if ($pm_work_status == 2) {
                                 $pm_display = '❌未在岗';
+                            } elseif ($pm_work_status == 1) {
+                                $pm_display = '⏱️短暂出现';
                             } else {
                                 if ($has_calibration) {
                                     $pm_start = $pm_start_monitor ? calc_display_time($pm_start_monitor, $offset) : '';
@@ -2007,7 +2038,7 @@ function view_monthly_report($year, $month, $data) {
 
                             // 生成监控时间显示
                             $am_monitor_display = '';
-                            if (!$am_is_absent) {
+                            if ($am_work_status != 2) {
                                 if ($am_start_monitor && $am_end_monitor) {
                                     $am_monitor_display = substr($am_start_monitor, 0, 5) . '-' . ($am_is_closing ? '营业结束' : substr($am_end_monitor, 0, 5));
                                 } elseif ($am_start_monitor) {
@@ -2018,7 +2049,7 @@ function view_monthly_report($year, $month, $data) {
                             }
 
                             $pm_monitor_display = '';
-                            if (!$pm_is_absent) {
+                            if ($pm_work_status != 2) {
                                 if ($pm_start_monitor && $pm_end_monitor) {
                                     $pm_monitor_display = substr($pm_start_monitor, 0, 5) . '-' . ($pm_is_closing ? '营业结束' : substr($pm_end_monitor, 0, 5));
                                 } elseif ($pm_start_monitor) {
